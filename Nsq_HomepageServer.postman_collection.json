@@ -1,0 +1,160 @@
+{
+  "info": {
+    "_postman_id": "d1282ade-b37c-474c-a017-bdabe376c429",
+    "name": "Nsq_HomepageServer",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "26203024"
+  },
+  "item": [
+    {
+      "name": "회사 소개 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/about",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "about"
+          ]
+        },
+        "description": "**회사 정보를 가져옵니다**\n\n### \\[출력\\]\n\n``` json\n{\n  \"introduction\": \"회사소개 내용\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "회사소개 저장",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"introduction\": \"회사소개 내용\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/about",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "about"
+          ]
+        },
+        "description": "**회사 소개 수정**\n\n### \\[입력\\]\n\n``` json\n{\n  \"introduction\": \"회사소개 내용\"\n}\n```\n\n### \\[출력\\]\n\n``` json\n{\n  \"introduction\": \"회사소개 내용\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "회사 서비스 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/service",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "service"
+          ]
+        },
+        "description": "**회사 서비스를 가져옵니다**\n\n### \\[출력\\]\n\n``` json\n{\n  \"service\": \"회사서비스 내용\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "회사 서비스 저장",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"service\": \"회사서비스 내용\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/service",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "service"
+          ]
+        },
+        "description": "**회사 서비스 수정**\n\n### \\[입력\\]\n\n``` json\n{\n  \"service\": \"회사서비스 내용\"\n}\n```\n\n### \\[출력\\]\n\n``` json\n{\n  \"service\": \"회사서비스 내용\"\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "회사 연혁 조회",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/history",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "history"
+          ]
+        },
+        "description": "**회사 연혁을 가져옵니다**\n\n### \\[출력\\]\n\n``` json\n{\n  \"history\": [\n    {\n      \"date\": \"2024-01-01\",\n      \"content\": \"내용\"\n    }\n  ]\n}\n```"
+      },
+      "response": []
+    },
+    {
+      "name": "회사 연혁 저장",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"history\": [\n    {\n      \"date\": \"2024-01-01\",\n      \"content\": \"내용\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/Home/history",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "Home",
+            "history"
+          ]
+        },
+        "description": "**회사 연혁 수정**\n\n### \\[입력\\]\n\n``` json\n{\n  \"history\": [\n    {\n      \"date\": \"2024-01-01\",\n      \"content\": \"내용\"\n    }\n  ]\n}\n```\n\n### \\[출력\\]\n\n``` json\n{\n  \"history\": [\n    {\n      \"date\": \"2024-01-01\",\n      \"content\": \"내용\"\n    }\n  ]\n}\n```"
+      },
+      "response": []
+    }
+  ]
+}

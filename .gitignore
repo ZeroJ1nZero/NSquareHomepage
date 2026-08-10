@@ -1,0 +1,67 @@
+## ==========================================
+## .NET / C# Build & Compilation Exclusions
+## ==========================================
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+build/
+dist/
+out/
+
+## ==========================================
+## IDE & Editor Settings (Visual Studio, VS Code, Rider)
+## ==========================================
+.vs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+## ==========================================
+## Database & Local Storage Exclusions
+## ==========================================
+*.db
+*.db-shm
+*.db-wal
+*.mdf
+*.ldf
+*.sqlite
+*.sqlite3
+homepage.db
+mssqllocaldb/
+
+## ==========================================
+## Sensitive Configurations & Environment Secrets
+## ==========================================
+appsettings.Local.json
+*.env
+*.env.local
+*.pem
+*.key
+*.pfx
+*.crt
+
+## ==========================================
+## Operating System & Temporary Files
+## ==========================================
+[Tt]emp/
+[Tt]mp/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+
+## ==========================================
+## Test & Log Files
+## ==========================================
+TestResults/
+*.log

@@ -1,0 +1,12 @@
+# 빌드 산출물 / IDE
+bin/
+obj/
+.vs/
+*.user
+
+# 요청에 따라 제외: 테스트, 문서
+tests/
+docs/
+*.md
+*.docx
+*.drawio

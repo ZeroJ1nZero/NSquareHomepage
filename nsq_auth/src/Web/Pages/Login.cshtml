@@ -1,0 +1,24 @@
+@page
+@model Web.Pages.LoginModel
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>사내 통합 로그인</title>
+</head>
+<body>
+    <h1>사내 통합 로그인</h1>
+
+    @if (Model.Error is not null)
+    {
+        <p style="color:red">@Model.Error</p>
+    }
+
+    <form method="post">
+        <label>아이디 <input type="text" asp-for="Email" required autofocus /></label><br />
+        <label>비밀번호 <input type="password" asp-for="Password" required /></label><br />
+        <button type="submit">로그인</button>
+    </form>
+</body>
+</html>
