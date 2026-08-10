@@ -13,6 +13,21 @@ public static class DependencyInjection
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen(options =>
         {
+            // 1. OAuth2 Password Flow (Swagger UI에서 아이디/비밀번호 직접 입력 ➔ 자동 로그인)
+            options.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
+            {
+                Type = SecuritySchemeType.OAuth2,
+                Description = "관리자 계정(test@company.local / Test1234!)으로 로그인하면 JWT 토큰이 자동 발급/인증됩니다.",
+                Flows = new OpenApiOAuthFlows
+                {
+                    Password = new OpenApiOAuthFlow
+                    {
+                        TokenUrl = new Uri("/api/auth/token", UriKind.Relative)
+                    }
+                }
+            });
+
+            // 2. Direct Bearer Token 입력방식도 함께 지원
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
             {
                 Name = "Authorization",
@@ -20,11 +35,22 @@ public static class DependencyInjection
                 Scheme = "Bearer",
                 BearerFormat = "JWT",
                 In = ParameterLocation.Header,
-                Description = "nsq_auth SSO 토큰 입력란. 형식: Bearer {JWT 토큰}"
+                Description = "직접 발급받은 JWT 토큰 입력란. 형식: Bearer {JWT 토큰}"
             });
 
             options.AddSecurityRequirement(new OpenApiSecurityRequirement
             {
+                {
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference
+                        {
+                            Type = ReferenceType.SecurityScheme,
+                            Id = "oauth2"
+                        }
+                    },
+                    Array.Empty<string>()
+                },
                 {
                     new OpenApiSecurityScheme
                     {
