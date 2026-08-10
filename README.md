@@ -1,99 +1,112 @@
-# NSquare Homepage Web API Server
+# 🏢 NSquareHomepage (엔스퀘어 사내 통합 홈페이지 & SSO 시스템)
 
-**NSquare 홈페이지 백엔드 RESTful Web API 서버**입니다.  
-클린 아키텍처(Clean Architecture)와 Entity Framework Core Code-First 방식을 적용하여 유지보수성과 확장성을 극대화하였습니다.
-
----
-
-## 🛠 기술 스택 (Tech Stack)
-
-- **Framework**: .NET 10 (ASP.NET Core Web API)
-- **ORM / DB**: Entity Framework Core 10 (Code-First), SQLite / SQL Server
-- **Architecture**: Clean Architecture (Presentation / Infrastructure → Application → Domain)
-- **API Spec & Tools**: RESTful API Design, Swagger UI (OpenAPI 3.0), Postman Collection 호환
+클린 아키텍처(Clean Architecture) 및 EF Core Code-First 구조 기반으로 제작된 엔스퀘어 사내 통합 백엔드 API 및 OIDC SSO(Single Sign-On) 인증 서버 프로젝트입니다.
 
 ---
 
-## 🏗 프로젝트 아키텍처 (Project Structure)
+## 📐 프로젝트 구조 (Project Architecture)
 
-```
-NSquareHomepage/
-├── HomepagePrototype/                          # .NET 10 Solution
-│   ├── Prototype.slnx                          # 솔루션 파일
+이 프로젝트는 **Clean Architecture** 원칙을 엄격히 준수하여 4개의 독립된 레이어 계층으로 구성되어 있으며, 사내 통합 인증을 위한 **`nsq_auth` SSO 서버**와 연동됩니다.
+
+```text
+C:\NSquareHomepage\
+├── HomepagePrototype/                      # 🏢 사내 홈페이지 Web API 솔루션
+│   ├── Prototype.slnx
 │   └── src/
-│       ├── Prototype.Domain/                   # [Domain Layer] 
-│       │   └── Entities/                       # CompanyInfo, CompanyHistory 엔티티
+│       ├── Prototype.Domain/               # 💎 [Domain Layer] 순수 도메인 엔티티
+│       │   └── Entities/
+│       │       ├── CompanyInfo.cs          # 회사 소개 및 서비스 엔티티
+│       │       └── CompanyHistory.cs       # 연혁 엔티티
 │       │
-│       ├── Prototype.Application/              # [Application Layer]
-│       │   ├── DTOs/                           # 계층 간 데이터 전송 DTOs
-│       │   ├── UseCases/                       # 컨트롤러 액션 1:1 대치 비즈니스 유스케이스
-│       │   └── Common/Interfaces/              # IApplicationDbContext 추상화
+│       ├── Prototype.Application/          # ⚙️ [Application Layer] 유스케이스 및 DTO
+│       │   ├── DTOs/
+│       │   │   ├── About/                  # AboutDto, UpdateAboutDto
+│       │   │   ├── Service/                # ServiceDto, UpdateServiceDto
+│       │   │   └── History/                # CompanyHistoryDtos
+│       │   └── UseCases/
+│       │       ├── About/                  # GetAboutUseCase, UpdateAboutUseCase
+│       │       ├── Service/                # GetServiceUseCase, UpdateServiceUseCase
+│       │       └── History/                # GetCompanyHistoriesUseCase, CreateCompanyHistoryUseCase ...
 │       │
-│       ├── Prototype.Infrastructure/           # [Infrastructure Layer]
-│       │   ├── Persistence/                    # ApplicationDbContext, EF Core Configurations
-│       │   └── Migrations/                     # Code-First DB 마이그레이션 스크립트
+│       ├── Prototype.Infrastructure/       # 🗄️ [Infrastructure Layer] DB & EF Core
+│       │   ├── Persistence/
+│       │   │   ├── ApplicationDbContext.cs
+│       │   │   └── Configurations/        # Fluent API 테이블 매핑
+│       │   └── Migrations/                 # EF Core Code-First 마이그레이션
 │       │
-│       └── Prototype.Api/                      # [Presentation Layer]
-│           ├── Controllers/                    # RESTful & Postman 호환 API Controllers
-│           ├── Middlewares/                    # 전역 예외처리, 로깅, 인증 미들웨어 (OCP 적용)
-│           ├── appsettings.json                # DB 연결 및 애플리케이션 설정
-│           └── Program.cs                      # DI 등록 및 HTTP 요청 파이프라인
+│       └── Prototype.Api/                  # 🌐 [Presentation Layer] RESTful Web API
+│           ├── Controllers/
+│           │   ├── AboutController.cs      # GET/PUT /api/about
+│           │   ├── ServicesController.cs   # GET/PUT /api/services
+│           │   ├── HistoriesController.cs  # GET/PUT /api/histories
+│           │   └── AuthController.cs       # Dev Admin JWT 토큰 발급
+│           └── Middlewares/                # Custom Exception, Logging, Auth 미들웨어
 │
-├── Nsq_HomepageServer.postman_collection.json  # Postman API 명세서
-└── README.md
+└── nsq_auth/                               # 🔐 [SSO Auth Server] OpenIddict OIDC 인증 서버
+    ├── AuthServer.slnx
+    └── src/
+        ├── Domain/ & Application/ & Infrastructure/
+        └── Web/                            # connect/authorize, connect/token 엔드포인트
 ```
 
 ---
 
-## 🚀 주요 기능 (Key Features)
+## 🛠️ 기술 스택 (Tech Stack)
 
-1. **회사 소개 (Company Introduction)**
-   - 회사 소개 및 대표 문구 조회 / 수정
-2. **회사 서비스 (Company Service)**
-   - 주요 제공 서비스 정보 조회 / 수정
-3. **회사 연혁 (Company History)**
-   - 연혁 전체 목록 조회 / 단건 상세 조회 / 신규 연혁 등록 / 연혁 수정 / 연혁 삭제 (RESTful CRUD)
-4. **미들웨어 파이프라인 (Middlewares - OCP 적용)**
-   - **ExceptionHandlingMiddleware**: 전역 예외 처리 및 표준 JSON 에러 응답
-   - **RequestResponseLoggingMiddleware**: 요청/응답 수행 시간 및 HTTP 메서드 로깅
-   - **CustomAuthMiddleware**: 확장 가능한 인증/인가 헤더 검증
-5. **대화형 API 문서 (Swagger UI)**
-   - `/swagger` 경로를 통한 대화형 API 테스트 지원
+- **Framework**: .NET 10 Web API
+- **Architecture**: Clean Architecture (Presentation ➔ Infrastructure ➔ Application ➔ Domain)
+- **ORM / Database**: Entity Framework Core 10 (Code-First)
+- **Database Server**: **Microsoft SQL Server Express** (`localhost\SQLEXPRESS` / `HomepagePrototypeDb`)
+- **Authentication**: JWT Bearer Authentication & OpenIddict OIDC SSO (`nsq_auth`)
+- **API Documentation**: Swashbuckle Swagger UI (`/swagger`) with Bearer Authorization
 
 ---
 
-## 📋 API 엔드포인트 명세 (API Endpoints)
+## 🌐 RESTful API 명세표 (API Specifications)
 
-### RESTful API Endpoints
-| Verb | Endpoint | Description |
-| :--- | :--- | :--- |
-| **GET** | `/api/company-info` | 회사 전체 정보(소개 & 서비스) 조회 |
-| **PUT** | `/api/company-info` | 회사 정보 수정 |
-| **GET** | `/api/histories` | 회사 연혁 전체 목록 조회 |
-| **GET** | `/api/histories/{id}` | 특정 연혁 1개 상세 조회 |
-| **POST** | `/api/histories` | 신규 연혁 항목 추가 |
-| **PUT** | `/api/histories/{id}` | 특정 연혁 1개 수정 |
-| **DELETE** | `/api/histories/{id}` | 특정 연혁 1개 삭제 |
-
-### Postman Collection Legacy 호환 Endpoints
-- `GET /api/Home/about`, `PUT /api/Home/about`
-- `GET /api/Home/service`, `PUT /api/Home/service`
-- `GET /api/Home/history`, `PUT /api/Home/history`
+| 도메인 | HTTP Method | Endpoint | 설명 | 권한 요구사항 |
+| :--- | :--- | :--- | :--- | :--- |
+| **About** | `GET` | `/api/about` | 회사 소개 정보 조회 | 누구나 |
+| **About** | `PUT` | `/api/about` | 회사 소개 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
+| **Services** | `GET` | `/api/services` | 회사 주요 서비스 정보 조회 | 누구나 |
+| **Services** | `PUT` | `/api/services` | 회사 주요 서비스 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
+| **Histories** | `GET` | `/api/histories` | 전체 연혁 목록 조회 | 누구나 |
+| **Histories** | `PUT` | `/api/histories` | 새로운 연혁 항목 입력/추가 | **SSO JWT 인증 필요 (🔒)** |
+| **Auth (Dev)** | `GET` | `/api/auth/dev-token` | Swagger UI 테스트용 Admin JWT 토큰 발급 | 누구나 |
 
 ---
 
-## 💻 실행 및 시작 가이드 (Getting Started)
+## 🔑 SSO 인증 & Swagger UI 테스트 가이드
 
-### 1. 솔루션 빌드
-```bash
-dotnet build HomepagePrototype/Prototype.slnx
-```
+1. **Web API 서버 실행**:
+   ```bash
+   dotnet run --project HomepagePrototype/src/Prototype.Api --urls "http://localhost:5000"
+   ```
+2. **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+3. **테스트용 Admin JWT 토큰 발급**:
+   - Swagger UI에서 `GET /api/auth/dev-token` ➔ `Try it out` ➔ `Execute` 실행
+   - 응답으로 출력되는 `swagger_header_value` (`Bearer eyJhbGci...`) 복사
+4. **Swagger UI 인증 수락**:
+   - 우측 상단 🟢 **`Authorize (🔒)`** 버튼 클릭
+   - 복사한 `Bearer eyJhbGci...` 전체 텍스트 붙여넣기 ➔ `Authorize` 클릭
+5. **보호된 API 테스트**:
+   - `PUT /api/about`, `PUT /api/services`, `PUT /api/histories` 실행 시 데이터 수정 및 SQL Server Express DB 자동 저장 확인!
 
-### 2. 프로젝트 실행
-```bash
-dotnet run --project HomepagePrototype/src/Prototype.Api --urls "http://localhost:5000"
-```
+---
 
-### 3. Swagger UI 접속 테스트
-웹 브라우저에서 아래 주소로 접속하여 API를 테스트합니다:
-- **Swagger UI**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+## 🗄️ SQL Server Express DB 연결 가이드 (VS Code)
+
+1. VS Code **`SQL Server (mssql)`** 확장 설치
+2. `+ Add Connection` 클릭 후 **`Connection String`** 선택:
+   ```text
+   Server=localhost\SQLEXPRESS;Database=HomepagePrototypeDb;Trusted_Connection=True;TrustServerCertificate=True;
+   ```
+3. 프로필 이름: `NSquareHomepage` 입력 후 Enter ➔ `Databases` ➔ `HomepagePrototypeDb` ➔ `Tables` 데이터 확인!
+
+---
+
+## 🚀 Git & GitHub 게시 정보
+
+- **Repository**: `https://github.com/ZeroJ1nZero/NSquareHomepage.git`
+- **Git Config**: `user.name` = `ZeroJ1nZero`, `user.email` = `ZeroJ1nZero@github.com`
+- **민감 정보 보호**: 비밀번호, 데이터베이스파일(`.db`), 빌드 결과물(`bin/`, `obj/`)은 `.gitignore`에 의해 안전하게 제외되어 있습니다.

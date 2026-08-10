@@ -1,58 +1,30 @@
-# NSquare Homepage Web API Server
+# 🏢 HomepagePrototype Web API
 
-**NSquare 홈페이지 백엔드 RESTful Web API 서버**입니다.  
-클린 아키텍처(Clean Architecture)와 Entity Framework Core Code-First 방식을 적용하여 유지보수성과 확장성을 극대화하였습니다.
-
----
-
-## 🛠 기술 스택 (Tech Stack)
-
-- **Framework**: .NET 10 (ASP.NET Core Web API)
-- **ORM / DB**: Entity Framework Core 10 (Code-First), SQLite / SQL Server
-- **Architecture**: Clean Architecture (Presentation / Infrastructure → Application → Domain)
-- **API Spec & Tools**: RESTful API Design, Swagger UI (OpenAPI 3.0), Postman Collection 호환
+엔스퀘어 사내 통합 홈페이지 시스템의 백엔드 Web API 프로젝트입니다. Clean Architecture와 EF Core Code-First 방식으로 작성되었습니다.
 
 ---
 
-## 🚀 주요 기능 (Key Features)
+## 📐 레이어 계층 구조 (Clean Architecture Layers)
 
-1. **회사 소개 (Company Introduction)**
-   - 회사 소개 및 대표 문구 조회 / 수정
-2. **회사 서비스 (Company Service)**
-   - 주요 제공 서비스 정보 조회 / 수정
-3. **회사 연혁 (Company History)**
-   - 연혁 전체 목록 조회 / 단건 상세 조회 / 신규 연혁 등록 / 연혁 수정 / 연혁 삭제 (RESTful CRUD)
-4. **미들웨어 파이프라인 (Middlewares - OCP 적용)**
-   - **ExceptionHandlingMiddleware**: 전역 예외 처리 및 표준 JSON 에러 응답
-   - **RequestResponseLoggingMiddleware**: 요청/응답 수행 시간 및 HTTP 메서드 로깅
-   - **CustomAuthMiddleware**: 확장 가능한 인증/인가 헤더 검증
-5. **대화형 API 문서 (Swagger UI)**
-   - `/swagger` 경로를 통한 대화형 API 테스트 지원
+- **`Prototype.Domain`**: 순수 도메인 엔티티 (`CompanyInfo`, `CompanyHistory`). 외부 의존성 0개.
+- **`Prototype.Application`**: 비즈니스 유스케이스 (`About`, `Service`, `History` 유스케이스) 및 DTO 객체.
+- **`Prototype.Infrastructure`**: EF Core `ApplicationDbContext`, Fluent API 테이블 설정, Code-First 마이그레이션 (`SQL Server Express` / `SQLite` 동적 지원).
+- **`Prototype.Api`**: RESTful API 컨트롤러 (`AboutController`, `ServicesController`, `HistoriesController`, `AuthController`), 커텀 예외/로깅/인증 미들웨어, Swagger UI.
 
 ---
 
-## 📋 API 엔드포인트 명세 (API Endpoints)
+## 🚀 빠른 시작 가이드
 
-### RESTful API Endpoints
-| Verb | Endpoint | Description |
-| :--- | :--- | :--- |
-| **GET** | `/api/company-info` | 회사 전체 정보(소개 & 서비스) 조회 |
-| **PUT** | `/api/company-info` | 회사 정보 수정 |
-| **GET** | `/api/histories` | 회사 연혁 전체 목록 조회 |
-| **GET** | `/api/histories/{id}` | 특정 연혁 1개 상세 조회 |
-| **POST** | `/api/histories` | 신규 연혁 항목 추가 |
-| **PUT** | `/api/histories/{id}` | 특정 연혁 1개 수정 |
-| **DELETE** | `/api/histories/{id}` | 특정 연혁 1개 삭제 |
-
----
-
-## 💻 실행 가이드 (Getting Started)
-
-```bash
-# 솔루션 빌드
-dotnet build Prototype.slnx
-
-# API 서버 실행
-dotnet run --project src/Prototype.Api --urls "http://localhost:5000"
-```
-- **Swagger UI**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+1. **프로젝트 빌드**:
+   ```bash
+   dotnet build Prototype.slnx
+   ```
+2. **DB 마이그레이션 적용 (SQL Server Express)**:
+   ```bash
+   dotnet ef database update --project src/Prototype.Infrastructure --startup-project src/Prototype.Api
+   ```
+3. **Web API 서버 구동**:
+   ```bash
+   dotnet run --project src/Prototype.Api --urls "http://localhost:5000"
+   ```
+4. **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
