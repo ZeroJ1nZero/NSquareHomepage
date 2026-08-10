@@ -1,7 +1,8 @@
 using Prototype.Application.Common.Interfaces;
-using Prototype.Application.DTOs.CompanyHistory;
+using Prototype.Application.DTOs.History;
+using Prototype.Domain.Entities;
 
-namespace Prototype.Application.UseCases.CompanyHistory;
+namespace Prototype.Application.UseCases.History;
 
 public interface ICreateCompanyHistoryUseCase
 {
@@ -19,9 +20,8 @@ public class CreateCompanyHistoryUseCase : ICreateCompanyHistoryUseCase
 
     public async Task<CompanyHistoryDto> ExecuteAsync(CreateCompanyHistoryDto dto, CancellationToken cancellationToken = default)
     {
-        var history = new Domain.Entities.CompanyHistory(dto.Date, dto.Content);
+        var history = new CompanyHistory(dto.Date, dto.Content);
         _context.CompanyHistories.Add(history);
-
         await _context.SaveChangesAsync(cancellationToken);
 
         return new CompanyHistoryDto(history.Id, history.Date, history.Content, history.CreatedAt);

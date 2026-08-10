@@ -7,11 +7,11 @@ using Prototype.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. DI 서비스 등록
+// 1. DI 서비스 등록 (nsq_auth SSO 연동 포함)
 builder.Services
     .AddApplicationServices()
     .AddInfrastructureServices(builder.Configuration)
-    .AddApiServices();
+    .AddApiServices(builder.Configuration);
 
 var app = builder.Build();
 
@@ -33,6 +33,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowAll");
+app.UseAuthentication(); // nsq_auth SSO 토큰 검증 미들웨어
 app.UseAuthorization();
 
 app.MapControllers();

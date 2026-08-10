@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Prototype.Application.Common.Interfaces;
 
-namespace Prototype.Application.UseCases.CompanyHistory;
+namespace Prototype.Application.UseCases.History;
 
 public interface IDeleteCompanyHistoryUseCase
 {
@@ -24,7 +24,6 @@ public class DeleteCompanyHistoryUseCase : IDeleteCompanyHistoryUseCase
 
         _context.CompanyHistories.Remove(history);
         await _context.SaveChangesAsync(cancellationToken);
-
         return true;
     }
 }

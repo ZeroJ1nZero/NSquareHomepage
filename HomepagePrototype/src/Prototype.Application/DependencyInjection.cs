@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
-using Prototype.Application.UseCases.CompanyHistory;
-using Prototype.Application.UseCases.CompanyInfo;
+using Prototype.Application.UseCases.About;
+using Prototype.Application.UseCases.History;
+using Prototype.Application.UseCases.Service;
 
 namespace Prototype.Application;
 
@@ -8,11 +9,15 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
-        // CompanyInfo UseCases
-        services.AddScoped<IGetCompanyInfoUseCase, GetCompanyInfoUseCase>();
-        services.AddScoped<IUpdateCompanyInfoUseCase, UpdateCompanyInfoUseCase>();
+        // About UseCases
+        services.AddScoped<IGetAboutUseCase, GetAboutUseCase>();
+        services.AddScoped<IUpdateAboutUseCase, UpdateAboutUseCase>();
 
-        // CompanyHistory UseCases
+        // Service UseCases
+        services.AddScoped<IGetServiceUseCase, GetServiceUseCase>();
+        services.AddScoped<IUpdateServiceUseCase, UpdateServiceUseCase>();
+
+        // History UseCases
         services.AddScoped<IGetCompanyHistoriesUseCase, GetCompanyHistoriesUseCase>();
         services.AddScoped<IGetCompanyHistoryByIdUseCase, GetCompanyHistoryByIdUseCase>();
         services.AddScoped<ICreateCompanyHistoryUseCase, CreateCompanyHistoryUseCase>();

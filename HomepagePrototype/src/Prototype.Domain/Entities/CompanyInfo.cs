@@ -2,7 +2,7 @@ namespace Prototype.Domain.Entities;
 
 public class CompanyInfo
 {
-    public int Id { get; private set; } = 1;
+    public int Id { get; private set; }
     public string Introduction { get; private set; } = string.Empty;
     public string Service { get; private set; } = string.Empty;
     public DateTime UpdatedAt { get; private set; } = DateTime.UtcNow;

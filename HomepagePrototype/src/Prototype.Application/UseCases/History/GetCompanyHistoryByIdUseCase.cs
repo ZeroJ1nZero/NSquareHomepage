@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Prototype.Application.Common.Interfaces;
-using Prototype.Application.DTOs.CompanyHistory;
+using Prototype.Application.DTOs.History;
 
-namespace Prototype.Application.UseCases.CompanyHistory;
+namespace Prototype.Application.UseCases.History;
 
 public interface IGetCompanyHistoryByIdUseCase
 {
@@ -20,9 +20,9 @@ public class GetCompanyHistoryByIdUseCase : IGetCompanyHistoryByIdUseCase
 
     public async Task<CompanyHistoryDto?> ExecuteAsync(int id, CancellationToken cancellationToken = default)
     {
-        var h = await _context.CompanyHistories.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (h == null) return null;
+        var history = await _context.CompanyHistories.FirstOrDefaultAsync(h => h.Id == id, cancellationToken);
+        if (history == null) return null;
 
-        return new CompanyHistoryDto(h.Id, h.Date, h.Content, h.CreatedAt);
+        return new CompanyHistoryDto(history.Id, history.Date, history.Content, history.CreatedAt);
     }
 }

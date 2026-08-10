@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Prototype.Application.Common.Interfaces;
-using Prototype.Application.DTOs.CompanyHistory;
+using Prototype.Application.DTOs.History;
 
-namespace Prototype.Application.UseCases.CompanyHistory;
+namespace Prototype.Application.UseCases.History;
 
 public interface IUpdateCompanyHistoryUseCase
 {

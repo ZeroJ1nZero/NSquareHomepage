@@ -1,6 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Prototype.Application.DTOs.CompanyHistory;
-using Prototype.Application.UseCases.CompanyHistory;
+using Prototype.Application.DTOs.History;
+using Prototype.Application.UseCases.History;
 
 namespace Prototype.Api.Controllers;
 
@@ -30,6 +31,7 @@ public class HistoriesController : ControllerBase
     }
 
     [HttpPost]
+    [Authorize] // nsq_auth SSO 인증 필요
     public async Task<ActionResult<CompanyHistoryDto>> CreateHistory(
         [FromBody] CreateCompanyHistoryDto dto,
         [FromServices] ICreateCompanyHistoryUseCase useCase,
@@ -40,6 +42,7 @@ public class HistoriesController : ControllerBase
     }
 
     [HttpPut("{id:int}")]
+    [Authorize] // nsq_auth SSO 인증 필요
     public async Task<ActionResult<CompanyHistoryDto>> UpdateHistory(
         [FromRoute] int id,
         [FromBody] UpdateCompanyHistoryDto dto,
@@ -53,6 +56,7 @@ public class HistoriesController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize] // nsq_auth SSO 인증 필요
     public async Task<IActionResult> DeleteHistory(
         [FromRoute] int id,
         [FromServices] IDeleteCompanyHistoryUseCase useCase,
