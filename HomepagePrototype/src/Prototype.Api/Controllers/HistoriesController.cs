@@ -9,6 +9,9 @@ namespace Prototype.Api.Controllers;
 [Route("api/[controller]")]
 public class HistoriesController : ControllerBase
 {
+    /// <summary>
+    /// 전체 연혁 목록 조회
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<List<CompanyHistoryDto>>> GetHistories(
         [FromServices] IGetCompanyHistoriesUseCase useCase,
@@ -18,53 +21,31 @@ public class HistoriesController : ControllerBase
         return Ok(result);
     }
 
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<CompanyHistoryDto>> GetHistoryById(
-        [FromRoute] int id,
-        [FromServices] IGetCompanyHistoryByIdUseCase useCase,
-        CancellationToken cancellationToken)
-    {
-        var result = await useCase.ExecuteAsync(id, cancellationToken);
-        if (result == null) return NotFound(new { message = $"ID {id} 연혁 항목을 찾을 수 없습니다." });
-
-        return Ok(result);
-    }
-
+    /// <summary>
+    /// 연혁 항목 입력/추가 (SSO 인증 필요 - PUT & POST 모두 지원)
+    /// </summary>
+    [HttpPut]
     [HttpPost]
-    [Authorize] // nsq_auth SSO 인증 필요
+    [Authorize]
     public async Task<ActionResult<CompanyHistoryDto>> CreateHistory(
         [FromBody] CreateCompanyHistoryDto dto,
         [FromServices] ICreateCompanyHistoryUseCase useCase,
         CancellationToken cancellationToken)
     {
         var result = await useCase.ExecuteAsync(dto, cancellationToken);
-        return CreatedAtAction(nameof(GetHistoryById), new { id = result.Id }, result);
-    }
-
-    [HttpPut("{id:int}")]
-    [Authorize] // nsq_auth SSO 인증 필요
-    public async Task<ActionResult<CompanyHistoryDto>> UpdateHistory(
-        [FromRoute] int id,
-        [FromBody] UpdateCompanyHistoryDto dto,
-        [FromServices] IUpdateCompanyHistoryUseCase useCase,
-        CancellationToken cancellationToken)
-    {
-        var result = await useCase.ExecuteAsync(id, dto, cancellationToken);
-        if (result == null) return NotFound(new { message = $"ID {id} 연혁 항목을 찾을 수 없습니다." });
-
         return Ok(result);
     }
 
-    [HttpDelete("{id:int}")]
-    [Authorize] // nsq_auth SSO 인증 필요
-    public async Task<IActionResult> DeleteHistory(
-        [FromRoute] int id,
-        [FromServices] IDeleteCompanyHistoryUseCase useCase,
-        CancellationToken cancellationToken)
-    {
-        var success = await useCase.ExecuteAsync(id, cancellationToken);
-        if (!success) return NotFound(new { message = $"ID {id} 연혁 항목을 찾을 수 없습니다." });
+    /* ── [향후 단건 상세/수정/삭제 필요 시 주석 해제하여 사용 가능] ──
+    
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<CompanyHistoryDto>> GetHistoryById(int id, [FromServices] IGetCompanyHistoryByIdUseCase useCase, CancellationToken ct) { ... }
 
-        return NoContent();
-    }
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<CompanyHistoryDto>> UpdateHistory(int id, UpdateCompanyHistoryDto dto, [FromServices] IUpdateCompanyHistoryUseCase useCase, CancellationToken ct) { ... }
+
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteHistory(int id, [FromServices] IDeleteCompanyHistoryUseCase useCase, CancellationToken ct) { ... }
+
+    ── [끝] ── */
 }
