@@ -6,7 +6,7 @@ using Prototype.Application.UseCases.About;
 namespace Prototype.Api.Controllers;
 
 [ApiController]
-[Route("api/about")]
+[Route("api/Home/about")]
 public class AboutController : ControllerBase
 {
     [HttpGet]

@@ -6,7 +6,7 @@ using Prototype.Application.UseCases.History;
 namespace Prototype.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/Home/history")]
 public class HistoriesController : ControllerBase
 {
     /// <summary>

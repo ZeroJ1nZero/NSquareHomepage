@@ -20,8 +20,8 @@ C:\NSquareHomepage\
 │       │
 │       ├── Prototype.Application/          # ⚙️ [Application Layer] 유스케이스 및 DTO
 │       │   ├── DTOs/
-│       │   │   ├── About/                  # AboutDto, UpdateAboutDto
-│       │   │   ├── Service/                # ServiceDto, UpdateServiceDto
+│       │   │   ├── About/                  # AboutDtos
+│       │   │   ├── Service/                # ServiceDtos
 │       │   │   └── History/                # CompanyHistoryDtos
 │       │   └── UseCases/
 │       │       ├── About/                  # GetAboutUseCase, UpdateAboutUseCase
@@ -36,17 +36,19 @@ C:\NSquareHomepage\
 │       │
 │       └── Prototype.Api/                  # 🌐 [Presentation Layer] RESTful Web API
 │           ├── Controllers/
-│           │   ├── AboutController.cs      # GET/PUT /api/about
-│           │   ├── ServicesController.cs   # GET/PUT /api/services
-│           │   ├── HistoriesController.cs  # GET/PUT /api/histories
-│           │   └── AuthController.cs       # Dev Admin JWT 토큰 발급
+│           │   ├── AboutController.cs      # GET/PUT /api/Home/about
+│           │   ├── ServicesController.cs   # GET/PUT /api/Home/service
+│           │   ├── HistoriesController.cs  # GET/PUT /api/Home/history
+│           │   └── AuthController.cs       # Dev Admin JWT 토큰 발급 & 로그인
 │           └── Middlewares/                # Custom Exception, Logging, Auth 미들웨어
 │
-└── nsq_auth/                               # 🔐 [SSO Auth Server] OpenIddict OIDC 인증 서버
-    ├── AuthServer.slnx
-    └── src/
-        ├── Domain/ & Application/ & Infrastructure/
-        └── Web/                            # connect/authorize, connect/token 엔드포인트
+├── nsq_auth/                               # 🔐 [SSO Auth Server] OpenIddict OIDC 인증 서버
+│   ├── AuthServer.slnx
+│   └── src/
+│       ├── Domain/ & Application/ & Infrastructure/
+│       └── Web/                            # OIDC OpenIddict (connect/authorize, connect/token)
+│
+└── Nsq_HomepageServer.postman_collection.json # 📄 Postman API 테스팅 콜렉션 파일
 ```
 
 ---
@@ -56,7 +58,7 @@ C:\NSquareHomepage\
 - **Framework**: .NET 10 Web API
 - **Architecture**: Clean Architecture (Presentation ➔ Infrastructure ➔ Application ➔ Domain)
 - **ORM / Database**: Entity Framework Core 10 (Code-First)
-- **Database Server**: **Microsoft SQL Server Express** (`localhost\SQLEXPRESS` / `HomepagePrototypeDb`)
+- **Database Server**: **SQLite** (`homepage.db` 자동 생성) & **SQL Server / MariaDB** 지원
 - **Authentication**: JWT Bearer Authentication & OpenIddict OIDC SSO (`nsq_auth`)
 - **API Documentation**: Swashbuckle Swagger UI (`/swagger`) with Bearer Authorization
 
@@ -66,42 +68,56 @@ C:\NSquareHomepage\
 
 | 도메인 | HTTP Method | Endpoint | 설명 | 권한 요구사항 |
 | :--- | :--- | :--- | :--- | :--- |
-| **About** | `GET` | `/api/about` | 회사 소개 정보 조회 | 누구나 |
-| **About** | `PUT` | `/api/about` | 회사 소개 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
-| **Services** | `GET` | `/api/services` | 회사 주요 서비스 정보 조회 | 누구나 |
-| **Services** | `PUT` | `/api/services` | 회사 주요 서비스 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
-| **Histories** | `GET` | `/api/histories` | 전체 연혁 목록 조회 | 누구나 |
-| **Histories** | `PUT` | `/api/histories` | 새로운 연혁 항목 입력/추가 | **SSO JWT 인증 필요 (🔒)** |
+| **About** | `GET` | `/api/Home/about` | 회사 소개 정보 조회 | 누구나 |
+| **About** | `PUT` | `/api/Home/about` | 회사 소개 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
+| **Services** | `GET` | `/api/Home/service` | 회사 주요 서비스 정보 조회 | 누구나 |
+| **Services** | `PUT` | `/api/Home/service` | 회사 주요 서비스 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
+| **Histories** | `GET` | `/api/Home/history` | 전체 연혁 목록 조회 | 누구나 |
+| **Histories** | `PUT` | `/api/Home/history` | 연혁 항목 입력/추가 | **SSO JWT 인증 필요 (🔒)** |
+| **Auth (Dev)** | `POST` | `/api/auth/login` | 개발/테스트용 관리자 로그인 | 누구나 |
 | **Auth (Dev)** | `GET` | `/api/auth/dev-token` | Swagger UI 테스트용 Admin JWT 토큰 발급 | 누구나 |
+
+---
+
+## 🚀 백엔드 & 인증 서버 실행 방법
+
+### 1. 사내 홈페이지 Web API 서버 실행
+```bash
+dotnet run --project HomepagePrototype/src/Prototype.Api --urls "http://localhost:5000"
+```
+- **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+
+### 2. OIDC SSO 인증 서버 (`nsq_auth`) 실행
+```bash
+dotnet run --project nsq_auth/src/Web
+```
+- **HTTP 주소**: `http://localhost:5123`
+- **HTTPS 주소**: `https://localhost:7213`
+- **Swagger UI 접속**: [http://localhost:5123/swagger](http://localhost:5123/swagger)
 
 ---
 
 ## 🔑 SSO 인증 & Swagger UI 테스트 가이드
 
-1. **Web API 서버 실행**:
-   ```bash
-   dotnet run --project HomepagePrototype/src/Prototype.Api --urls "http://localhost:5000"
-   ```
-2. **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
-3. **테스트용 Admin JWT 토큰 발급**:
+1. **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+2. **테스트용 Admin JWT 토큰 발급**:
    - Swagger UI에서 `GET /api/auth/dev-token` ➔ `Try it out` ➔ `Execute` 실행
-   - 응답으로 출력되는 `swagger_header_value` (`Bearer eyJhbGci...`) 복사
-4. **Swagger UI 인증 수락**:
+   - 응답으로 출력되는 `access_token` 문자열 값 복사 (예: `eyJhbGci...`)
+3. **Swagger UI 인증 수락**:
    - 우측 상단 🟢 **`Authorize (🔒)`** 버튼 클릭
-   - 복사한 `Bearer eyJhbGci...` 전체 텍스트 붙여넣기 ➔ `Authorize` 클릭
-5. **보호된 API 테스트**:
-   - `PUT /api/about`, `PUT /api/services`, `PUT /api/histories` 실행 시 데이터 수정 및 SQL Server Express DB 자동 저장 확인!
+   - 복사한 JWT 토큰 값만 입력란에 붙여넣기 (`Bearer ` 접두사는 자동 추가됨) ➔ `Authorize` 클릭
+4. **보호된 API 테스트**:
+   - `PUT /api/Home/about`, `PUT /api/Home/service`, `PUT /api/Home/history` 실행 시 데이터 수정 및 저장 확인!
 
 ---
 
-## 🗄️ SQL Server Express DB 연결 가이드 (VS Code)
+## 📄 Postman API 콜렉션 활용
 
-1. VS Code **`SQL Server (mssql)`** 확장 설치
-2. `+ Add Connection` 클릭 후 **`Connection String`** 선택:
-   ```text
-   Server=localhost\SQLEXPRESS;Database=HomepagePrototypeDb;Trusted_Connection=True;TrustServerCertificate=True;
-   ```
-3. 프로필 이름: `NSquareHomepage` 입력 후 Enter ➔ `Databases` ➔ `HomepagePrototypeDb` ➔ `Tables` 데이터 확인!
+프로젝트 루트에 포함된 `Nsq_HomepageServer.postman_collection.json` 파일은 모든 API 테스트 규격을 담고 있습니다.
+
+1. Postman 실행 ➔ `Import` 클릭
+2. `Nsq_HomepageServer.postman_collection.json` 파일 선택
+3. 환경 변수 `baseUrl`을 `http://localhost:5000`으로 설정 후 API 테스팅 진행
 
 ---
 
