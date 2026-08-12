@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Web.Pages;
 
+[AutoValidateAntiforgeryToken]
 public class LoginModel(AppDbContext db, IPasswordHasher<User> hasher, ILoginAuditor auditor) : PageModel
 {
     [BindProperty] public string Email { get; set; } = "";
