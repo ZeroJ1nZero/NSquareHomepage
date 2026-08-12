@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using System.Security.Cryptography.X509Certificates;
+using System.IO;
 using Application.UseCases;
 using Domain.Entities;
 using Infrastructure;
@@ -10,6 +12,34 @@ using Web.Middleware;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 운영용 인증서(PFX)를 구성에서 읽어들여 OpenIddict 서명/암호화 및 Kestrel HTTPS에 사용합니다.
+X509Certificate2? signingCert = null;
+X509Certificate2? encryptionCert = null;
+var signingPath = builder.Configuration["Certificates:Signing:PfxPath"];
+var signingPassword = builder.Configuration["Certificates:Signing:Password"];
+if (!string.IsNullOrEmpty(signingPath) && File.Exists(signingPath))
+{
+    signingCert = new X509Certificate2(signingPath, signingPassword, X509KeyStorageFlags.DefaultKeySet);
+}
+var encryptionPath = builder.Configuration["Certificates:Encryption:PfxPath"];
+var encryptionPassword = builder.Configuration["Certificates:Encryption:Password"];
+if (!string.IsNullOrEmpty(encryptionPath) && File.Exists(encryptionPath))
+{
+    encryptionCert = new X509Certificate2(encryptionPath, encryptionPassword, X509KeyStorageFlags.DefaultKeySet);
+}
+
+// Kestrel HTTPS 기본 옵션에 발견된 인증서를 할당합니다 (있을 경우). 운영 환경에서 HTTPS를 강제할 때 사용.
+if (signingCert != null)
+{
+    builder.WebHost.ConfigureKestrel(serverOptions =>
+    {
+        serverOptions.ConfigureHttpsDefaults(httpsOptions =>
+        {
+            httpsOptions.ServerCertificate = signingCert;
+        });
+    });
+}
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<RegisterUserUseCase>();
@@ -33,15 +63,21 @@ builder.Services.AddOpenIddict()
         options.SetAccessTokenLifetime(TimeSpan.FromMinutes(15));
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));
 
-        // (options.AddSigningCertificate / AddEncryptionCertificate)
-        options.AddDevelopmentEncryptionCertificate()
-               .AddDevelopmentSigningCertificate();
-
-        options.UseAspNetCore()
+        // 운영용 인증서가 제공되면 이를 사용하고, 없으면 개발용 인증서로 폴백합니다.
+        if (encryptionCert != null)
+            options.AddEncryptionCertificate(encryptionCert);
+        else
+            options.AddDevelopmentEncryptionCertificate();
+        if (signingCert != null)
+            options.AddSigningCertificate(signingCert);
+        else
+            options.AddDevelopmentSigningCertificate();
+        options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough()
                .EnableUserInfoEndpointPassthrough()
                .EnableEndSessionEndpointPassthrough();
+               // Transport 보안 요구는 운영에서 HTTPS를 강제하므로 비활성화하지 않습니다.
     })
     .AddValidation(options =>
     {
@@ -71,9 +107,10 @@ builder.Services.AddMemoryCache();
 
 // 별도 프로젝트로 도는 클라이언트(홈페이지)의 브라우저 요청 허용
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
-    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .SetIsOriginAllowed(_ => true)
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    .AllowCredentials()));
 
 builder.Services.AddRazorPages();
 builder.Services.AddControllers();
