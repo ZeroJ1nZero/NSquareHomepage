@@ -1,10 +1,15 @@
 using ServiceServer.Api;
 using ServiceServer.Api.Middlewares;
+using ServiceServer.Application;
+using ServiceServer.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. DI 서비스 등록 (BFF 세션 관리, OIDC PKCE 서비스 및 ResourceServer 게이트웨이 클라이언트)
-builder.Services.AddApiServices(builder.Configuration);
+// 1. DI 서비스 등록 (Clean Architecture 4계층 구조)
+builder.Services
+    .AddApplicationServices()
+    .AddInfrastructureServices(builder.Configuration)
+    .AddApiServices(builder.Configuration);
 
 var app = builder.Build();
 

@@ -1,13 +1,12 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ServiceServer.Api.DTOs;
-using ServiceServer.Api.Services;
+using ServiceServer.Application.Common.Interfaces;
+using ServiceServer.Application.DTOs;
 
 namespace ServiceServer.Api.Controllers;
 
@@ -17,25 +16,23 @@ namespace ServiceServer.Api.Controllers;
 [ApiController]
 public class AuthController : ControllerBase
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly IConfiguration _configuration;
     private readonly IOidcStateService _oidcStateService;
+    private readonly IOidcTokenExchangeService _tokenExchangeService;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
         IOidcStateService oidcStateService,
+        IOidcTokenExchangeService tokenExchangeService,
+        IConfiguration configuration,
         ILogger<AuthController> logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _configuration = configuration;
         _oidcStateService = oidcStateService;
+        _tokenExchangeService = tokenExchangeService;
+        _configuration = configuration;
         _logger = logger;
     }
 
-    private string IdpBaseUrl => _configuration["Authentication:Authority"] ?? "https://localhost:7213";
-    private string ClientId => _configuration["Authentication:ClientId"] ?? "company-homepage";
     private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
 
     /// <summary>
@@ -116,19 +113,21 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "세션이 만료되었거나 PKCE 원본키가 존재하지 않습니다. 다시 로그인을 시도해 주세요." });
         }
 
-        var (isSuccess, responseContent, claims, rootElement) = await ProcessTokenExchangeAsync(code, verifier, DefaultRedirectUri, cancellationToken);
-        if (!isSuccess)
+        var result = await _tokenExchangeService.ExchangeCodeForTokensAsync(code, verifier, DefaultRedirectUri, cancellationToken);
+        if (!result.IsSuccess)
         {
-            _logger.LogError("Back-channel 토큰 교환 실패: {Content}", responseContent);
-            return StatusCode(400, JsonSerializer.Deserialize<object>(responseContent));
+            _logger.LogError("Back-channel 토큰 교환 실패: {Content}", result.ResponseContent);
+            return StatusCode(400, JsonSerializer.Deserialize<object>(result.ResponseContent));
         }
 
+        // 서비스 세션 쿠키 발급
+        await IssueServiceSessionCookieAsync(result);
+
         // [Step 12] 세션 클린업 및 최종 화면 응답
-        var returnUrl = HttpContext.Session.GetString("return_url") ?? "/swagger";
         _oidcStateService.ClearSession(HttpContext);
 
-        var userName = claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value ?? "관리자";
-        var userRole = claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value ?? "User";
+        var userName = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value ?? "관리자";
+        var userRole = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value ?? "User";
 
         var html = $$"""
             <!DOCTYPE html>
@@ -201,13 +200,14 @@ public class AuthController : ControllerBase
         }
 
         var redirectUri = string.IsNullOrWhiteSpace(request.RedirectUri) ? DefaultRedirectUri : request.RedirectUri;
-        var (isSuccess, responseContent, claims, rootElement) = await ProcessTokenExchangeAsync(request.Code, verifier, redirectUri, cancellationToken);
+        var result = await _tokenExchangeService.ExchangeCodeForTokensAsync(request.Code, verifier, redirectUri, cancellationToken);
 
-        if (!isSuccess)
+        if (!result.IsSuccess)
         {
-            return StatusCode(400, JsonSerializer.Deserialize<object>(responseContent));
+            return StatusCode(400, JsonSerializer.Deserialize<object>(result.ResponseContent));
         }
 
+        await IssueServiceSessionCookieAsync(result);
         _oidcStateService.ClearSession(HttpContext);
 
         return Ok(new
@@ -215,12 +215,12 @@ public class AuthController : ControllerBase
             message = "Back-channel 토큰 교환 완료 및 서비스 세션 쿠키(.NsqHomepage.ServiceSession)가 발급되었습니다.",
             user = new
             {
-                sub = claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value,
-                email = claims.FirstOrDefault(c => c.Type == "email" || c.Type == ClaimTypes.Email)?.Value,
-                name = claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value,
-                role = claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value
+                sub = result.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value,
+                email = result.Claims.FirstOrDefault(c => c.Type == "email" || c.Type == ClaimTypes.Email)?.Value,
+                name = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value,
+                role = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value
             },
-            tokens = rootElement
+            tokens = result.RootElement
         });
     }
 
@@ -246,50 +246,9 @@ public class AuthController : ControllerBase
         });
     }
 
-    private async Task<(bool IsSuccess, string Content, List<Claim> Claims, JsonElement RootElement)> ProcessTokenExchangeAsync(
-        string code,
-        string codeVerifier,
-        string redirectUri,
-        CancellationToken cancellationToken)
+    private async Task IssueServiceSessionCookieAsync(TokenExchangeResultDto result)
     {
-        var client = _httpClientFactory.CreateClient("IdpClient");
-        var tokenEndpoint = $"{IdpBaseUrl.TrimEnd('/')}/connect/token";
-
-        var parameters = new Dictionary<string, string>
-        {
-            { "grant_type", "authorization_code" },
-            { "client_id", ClientId },
-            { "code", code },
-            { "code_verifier", codeVerifier },
-            { "redirect_uri", redirectUri }
-        };
-
-        var response = await client.PostAsync(tokenEndpoint, new FormUrlEncodedContent(parameters), cancellationToken);
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            return (false, content, new List<Claim>(), default);
-        }
-
-        using var jsonDoc = JsonDocument.Parse(content);
-        var root = jsonDoc.RootElement.Clone();
-
-        var accessToken = root.TryGetProperty("access_token", out var at) ? at.GetString() : null;
-        var idToken = root.TryGetProperty("id_token", out var it) ? it.GetString() : null;
-        var refreshToken = root.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
-
-        var claims = new List<Claim>();
-        var tokenToRead = idToken ?? accessToken;
-        if (!string.IsNullOrWhiteSpace(tokenToRead))
-        {
-            var handler = new JwtSecurityTokenHandler();
-            if (handler.CanReadToken(tokenToRead))
-            {
-                var jwt = handler.ReadJwtToken(tokenToRead);
-                claims.AddRange(jwt.Claims);
-            }
-        }
+        var claims = new List<Claim>(result.Claims);
 
         if (!claims.Any(c => c.Type == ClaimTypes.NameIdentifier))
         {
@@ -312,6 +271,9 @@ public class AuthController : ControllerBase
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
         var principal = new ClaimsPrincipal(identity);
 
+        var accessToken = result.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() : null;
+        var refreshToken = result.RootElement.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+
         var authProperties = new AuthenticationProperties();
         if (!string.IsNullOrWhiteSpace(accessToken))
         {
@@ -323,22 +285,5 @@ public class AuthController : ControllerBase
         }
 
         await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
-
-        return (true, content, claims, root);
     }
-}
-
-public class TokenExchangeRequest
-{
-    [System.Text.Json.Serialization.JsonPropertyName("code")]
-    public string Code { get; set; } = string.Empty;
-
-    [System.Text.Json.Serialization.JsonPropertyName("code_verifier")]
-    public string? CodeVerifier { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("state")]
-    public string? State { get; set; }
-
-    [System.Text.Json.Serialization.JsonPropertyName("redirect_uri")]
-    public string? RedirectUri { get; set; }
 }

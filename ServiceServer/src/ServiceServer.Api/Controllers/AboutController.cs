@@ -1,20 +1,27 @@
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ServiceServer.Api.DTOs;
-using ServiceServer.Api.Services;
+using ServiceServer.Application.Common.Interfaces;
+using ServiceServer.Application.DTOs;
+using ServiceServer.Application.UseCases.Admin;
+using ServiceServer.Application.UseCases.Public;
 
 namespace ServiceServer.Api.Controllers;
 
 [ApiController]
 public class AboutController : ControllerBase
 {
-    private readonly IResourceApiClient _resourceApiClient;
+    private readonly IGetCompanyAboutUseCase _getAboutUseCase;
+    private readonly IUpdateCompanyAboutUseCase _updateAboutUseCase;
     private readonly IOidcStateService _oidcStateService;
 
-    public AboutController(IResourceApiClient resourceApiClient, IOidcStateService oidcStateService)
+    public AboutController(
+        IGetCompanyAboutUseCase getAboutUseCase,
+        IUpdateCompanyAboutUseCase updateAboutUseCase,
+        IOidcStateService oidcStateService)
     {
-        _resourceApiClient = resourceApiClient;
+        _getAboutUseCase = getAboutUseCase;
+        _updateAboutUseCase = updateAboutUseCase;
         _oidcStateService = oidcStateService;
     }
 
@@ -29,7 +36,7 @@ public class AboutController : ControllerBase
     [Tags("2. [파이프라인 2-A] 공개 데이터 조회 (트랙 A: 로그인 불필요)")]
     public async Task<ActionResult<AboutDto>> GetAbout(CancellationToken cancellationToken)
     {
-        var result = await _resourceApiClient.GetAboutAsync(cancellationToken);
+        var result = await _getAboutUseCase.ExecuteAsync(cancellationToken);
         return Ok(result);
     }
 
@@ -61,7 +68,7 @@ public class AboutController : ControllerBase
         }
 
         var accessToken = await HttpContext.GetTokenAsync("access_token");
-        var result = await _resourceApiClient.UpdateAboutAsync(dto, accessToken, cancellationToken);
+        var result = await _updateAboutUseCase.ExecuteAsync(dto, accessToken, cancellationToken);
         return Ok(result);
     }
 }

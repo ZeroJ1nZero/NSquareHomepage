@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/ServiceServer.Domain/ServiceServer.Domain.csproj" />
+    <Project Path="src/ServiceServer.Application/ServiceServer.Application.csproj" />
+    <Project Path="src/ServiceServer.Infrastructure/ServiceServer.Infrastructure.csproj" />
     <Project Path="src/ServiceServer.Api/ServiceServer.Api.csproj" />
   </Folder>
 </Solution>

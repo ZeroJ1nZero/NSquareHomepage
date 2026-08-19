@@ -1,16 +1,11 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
+using ServiceServer.Application.Common.Interfaces;
 
-namespace ServiceServer.Api.Services;
-
-public interface IOidcStateService
-{
-    (string Verifier, string Challenge, string State, string AuthorizeUrl) GenerateAndStorePkce(HttpContext context, string? returnUrl = null);
-    bool ValidateCsrfState(HttpContext context, string? incomingState);
-    string? GetStoredVerifier(HttpContext context);
-    void ClearSession(HttpContext context);
-}
+namespace ServiceServer.Infrastructure.Services;
 
 public class OidcStateService : IOidcStateService
 {
@@ -23,11 +18,10 @@ public class OidcStateService : IOidcStateService
 
     private string IdpBaseUrl => _configuration["Authentication:Authority"] ?? "https://localhost:7213";
     private string ClientId => _configuration["Authentication:ClientId"] ?? "company-homepage";
-    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/signin-oidc";
+    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
 
     public (string Verifier, string Challenge, string State, string AuthorizeUrl) GenerateAndStorePkce(HttpContext context, string? returnUrl = null)
     {
-        // 1. PKCE 원본 키 (code_verifier) 생성: 32바이트 암호학적 난수 -> Base64Url 인코딩
         var bytes = new byte[32];
         using (var rng = RandomNumberGenerator.Create())
         {
@@ -35,16 +29,13 @@ public class OidcStateService : IOidcStateService
         }
         var verifier = Base64UrlEncoder.Encode(bytes);
 
-        // 2. PKCE 공개 해시 키 (code_challenge) 생성: BASE64URL(SHA256(verifier))
         using (var sha256 = SHA256.Create())
         {
             var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(verifier));
             var challenge = Base64UrlEncoder.Encode(hash);
 
-            // 3. CSRF 검증 키 (state) 생성: 32자 무작위 GUID
             var state = Guid.NewGuid().ToString("N");
 
-            // 4. 서비스 서버 세션에 PKCE 원본 키와 CSRF 검증 키 보관
             context.Session.SetString("pkce_verifier", verifier);
             context.Session.SetString("oauth_state", state);
             if (!string.IsNullOrWhiteSpace(returnUrl))

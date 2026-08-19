@@ -1,20 +1,27 @@
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ServiceServer.Api.DTOs;
-using ServiceServer.Api.Services;
+using ServiceServer.Application.Common.Interfaces;
+using ServiceServer.Application.DTOs;
+using ServiceServer.Application.UseCases.Admin;
+using ServiceServer.Application.UseCases.Public;
 
 namespace ServiceServer.Api.Controllers;
 
 [ApiController]
 public class ServicesController : ControllerBase
 {
-    private readonly IResourceApiClient _resourceApiClient;
+    private readonly IGetCompanyServiceUseCase _getServiceUseCase;
+    private readonly IUpdateCompanyServiceUseCase _updateServiceUseCase;
     private readonly IOidcStateService _oidcStateService;
 
-    public ServicesController(IResourceApiClient resourceApiClient, IOidcStateService oidcStateService)
+    public ServicesController(
+        IGetCompanyServiceUseCase getServiceUseCase,
+        IUpdateCompanyServiceUseCase updateServiceUseCase,
+        IOidcStateService oidcStateService)
     {
-        _resourceApiClient = resourceApiClient;
+        _getServiceUseCase = getServiceUseCase;
+        _updateServiceUseCase = updateServiceUseCase;
         _oidcStateService = oidcStateService;
     }
 
@@ -29,7 +36,7 @@ public class ServicesController : ControllerBase
     [Tags("2. [파이프라인 2-A] 공개 데이터 조회 (트랙 A: 로그인 불필요)")]
     public async Task<ActionResult<ServiceDto>> GetService(CancellationToken cancellationToken)
     {
-        var result = await _resourceApiClient.GetServiceAsync(cancellationToken);
+        var result = await _getServiceUseCase.ExecuteAsync(cancellationToken);
         return Ok(result);
     }
 
@@ -61,7 +68,7 @@ public class ServicesController : ControllerBase
         }
 
         var accessToken = await HttpContext.GetTokenAsync("access_token");
-        var result = await _resourceApiClient.UpdateServiceAsync(dto, accessToken, cancellationToken);
+        var result = await _updateServiceUseCase.ExecuteAsync(dto, accessToken, cancellationToken);
         return Ok(result);
     }
 }

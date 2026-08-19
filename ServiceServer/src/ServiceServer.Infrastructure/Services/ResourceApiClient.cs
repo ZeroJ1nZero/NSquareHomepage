@@ -1,9 +1,11 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using ServiceServer.Api.DTOs;
+using Microsoft.Extensions.Logging;
+using ServiceServer.Application.Common.Interfaces;
+using ServiceServer.Application.DTOs;
 
-namespace ServiceServer.Api.Services;
+namespace ServiceServer.Infrastructure.Services;
 
 public class ResourceApiClient : IResourceApiClient
 {
