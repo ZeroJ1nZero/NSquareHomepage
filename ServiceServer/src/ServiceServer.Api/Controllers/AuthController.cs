@@ -36,7 +36,7 @@ public class AuthController : ControllerBase
 
     private string IdpBaseUrl => _configuration["Authentication:Authority"] ?? "https://localhost:7213";
     private string ClientId => _configuration["Authentication:ClientId"] ?? "company-homepage";
-    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/signin-oidc";
+    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
 
     /// <summary>
     /// [Step 1~2] SSO 로그인 시작 (PKCE &amp; CSRF 키 생성 및 IdP 인가 주소 발급)
@@ -154,14 +154,13 @@ public class AuthController : ControllerBase
     /// </summary>
     /// <remarks>
     /// **[시퀀스 흐름]**<br />
-    /// 1. **Step 8**: 인증서버에서 1회용 인가 코드(code)를 발급하여 브라우저를 /signin-oidc 로 리다이렉트합니다.<br />
+    /// 1. **Step 8**: 인증서버에서 1회용 인가 코드(code)를 발급하여 브라우저를 /api/auth/oidc-callback 으로 리다이렉트합니다.<br />
     /// 2. **Step 9**: 브라우저가 전달받은 code와 state를 서비스 서버에 제출합니다.<br />
     /// 3. **Step 10**: 서비스 서버가 state 일치 여부를 대조(CSRF 방어)하고, 세션의 code_verifier와 함께 인증 서버로 백채널 토큰 교환을 요청합니다.<br />
     /// 4. **Step 11**: 인증 서버가 PKCE 검증 후 Access/Refresh 토큰을 발급합니다.<br />
     /// 5. **Step 12**: 서비스 서버가 토큰을 내부 세션에 은폐 보관하고 브라우저에 .NsqHomepage.ServiceSession 쿠키를 발급합니다.
     /// </remarks>
     [HttpGet("api/auth/oidc-callback")]
-    [HttpGet("signin-oidc")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     public async Task<IActionResult> SigninOidcGet(
         [FromQuery] string? code,
