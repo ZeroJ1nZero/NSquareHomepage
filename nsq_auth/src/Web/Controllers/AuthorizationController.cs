@@ -18,7 +18,10 @@ namespace Web.Controllers;
 /// OIDC 표준 엔드포인트. 프로토콜 처리(파라미터 검증, 코드/토큰 발급, PKCE)는
 /// 전부 OpenIddict가 수행하고, 여기서는 "누구를 로그인시킬지"만 결정한다.
 /// </summary>
-public class AuthorizationController(AppDbContext db) : Controller
+public class AuthorizationController(
+    AppDbContext db,
+    IOpenIddictTokenManager tokenManager,
+    IOpenIddictAuthorizationManager authorizationManager) : Controller
 {
     [HttpGet("~/connect/authorize"), HttpPost("~/connect/authorize")]
     [IgnoreAntiforgeryToken]
@@ -110,11 +113,30 @@ public class AuthorizationController(AppDbContext db) : Controller
         });
     }
 
+    /// <summary>
+    /// 전역 로그아웃 (/connect/logout):
+    /// 1. AuthServer 세션 쿠키 삭제
+    /// 2. 해당 사용자의 DB 내 모든 refresh_token / authorization 항목 즉시 폐기(Revoke) (모든 서비스 세션 종료 전파)
+    /// 3. OIDC end_session 처리 및 post_logout_redirect_uri 리다이렉트
+    /// </summary>
     [HttpGet("~/connect/logout"), HttpPost("~/connect/logout")]
     [IgnoreAntiforgeryToken]
     public async Task<IActionResult> Logout()
     {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); // 인증서버 세션 종료 → 모든 사이트 SSO 해제
+        var cookieResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        var userId = cookieResult.Principal?.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            // 이 사용자의 모든 활성 토큰(refresh_token 포함) 및 Authorization 정보 즉시 폐기(Bulk Revoke)
+            await tokenManager.RevokeAsync(userId, null, null, null, HttpContext.RequestAborted);
+            await authorizationManager.RevokeAsync(userId, null, null, null, HttpContext.RequestAborted);
+        }
+
+        // AuthServer SSO 세션 쿠키 명시적 파기
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        Response.Cookies.Delete(".AspNetCore.Cookies");
+
         return SignOut(
             authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
             properties: new AuthenticationProperties { RedirectUri = "/" });

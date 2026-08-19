@@ -14,30 +14,36 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
     {
         using var scope = services.CreateScope();
 
-        // ponytail: 마이그레이션 없이 모델에서 스키마 직접 생성. 이미 DB가 있으면 아무것도 안 함 —
-        // 엔티티 변경 시 DB를 드랍하고 재생성해야 반영됨. 운영에서 데이터 보존이 필요해지면 마이그레이션으로 전환.
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureCreatedAsync(ct);
 
-        // 회사 홈페이지 클라이언트 등록
+        // 회사 홈페이지 클라이언트 등록 (nsq_auth/README.md 규격)
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var clientId = config["Clients:Homepage:ClientId"] ?? "company-homepage";
-        if (await manager.FindByClientIdAsync(clientId, ct) is null)
+        var existingApp = await manager.FindByClientIdAsync(clientId, ct);
+
+        var allowedRedirectUris = new HashSet<Uri>
         {
-            await manager.CreateAsync(new OpenIddictApplicationDescriptor
+            new Uri(config["Clients:Homepage:RedirectUri"] ?? "https://localhost:7001/signin-oidc"),
+            new Uri("http://localhost:5016/signin-oidc"),
+            new Uri("http://localhost:5000/signin-oidc")
+        };
+
+        var allowedPostLogoutRedirectUris = new HashSet<Uri>
+        {
+            new Uri(config["Clients:Homepage:PostLogoutRedirectUri"] ?? "https://localhost:7001/"),
+            new Uri("http://localhost:5016/signout-callback-oidc"),
+            new Uri("http://localhost:5016/"),
+            new Uri("http://localhost:5000/")
+        };
+
+        if (existingApp is null)
+        {
+            var descriptor = new OpenIddictApplicationDescriptor
             {
                 ClientId = clientId,
                 DisplayName = "회사 홈페이지",
-                // Public: 브라우저에서 도는 클라이언트는 시크릿을 숨길 수 없음 → PKCE로 보호
                 ClientType = ClientTypes.Public,
-                RedirectUris =
-                {
-                    new Uri(config["Clients:Homepage:RedirectUri"] ?? "https://localhost:7001/signin-oidc"),
-                },
-                PostLogoutRedirectUris =
-                {
-                    new Uri(config["Clients:Homepage:PostLogoutRedirectUri"] ?? "https://localhost:7001/"),
-                },
                 Permissions =
                 {
                     Permissions.Endpoints.Authorization,
@@ -51,7 +57,48 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                     Permissions.Prefixes.Scope + Scopes.OfflineAccess,
                 },
                 Requirements = { Requirements.Features.ProofKeyForCodeExchange },
-            }, ct);
+            };
+
+            foreach (var uri in allowedRedirectUris)
+            {
+                descriptor.RedirectUris.Add(uri);
+            }
+
+            foreach (var uri in allowedPostLogoutRedirectUris)
+            {
+                descriptor.PostLogoutRedirectUris.Add(uri);
+            }
+
+            await manager.CreateAsync(descriptor, ct);
+        }
+        else
+        {
+            var descriptor = new OpenIddictApplicationDescriptor();
+            await manager.PopulateAsync(descriptor, existingApp, ct);
+
+            bool needsUpdate = false;
+            foreach (var uri in allowedRedirectUris)
+            {
+                if (!descriptor.RedirectUris.Contains(uri))
+                {
+                    descriptor.RedirectUris.Add(uri);
+                    needsUpdate = true;
+                }
+            }
+
+            foreach (var uri in allowedPostLogoutRedirectUris)
+            {
+                if (!descriptor.PostLogoutRedirectUris.Contains(uri))
+                {
+                    descriptor.PostLogoutRedirectUris.Add(uri);
+                    needsUpdate = true;
+                }
+            }
+
+            if (needsUpdate)
+            {
+                await manager.UpdateAsync(existingApp, descriptor, ct);
+            }
         }
 
         // 개발 환경 전용 테스트 계정

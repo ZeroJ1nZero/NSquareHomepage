@@ -63,6 +63,8 @@ builder.Services.AddOpenIddict()
         options.SetAccessTokenLifetime(TimeSpan.FromMinutes(15));
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));
 
+        options.DisableAccessTokenEncryption();
+
         // 운영용 인증서가 제공되면 이를 사용하고, 없으면 개발용 인증서로 폴백합니다.
         if (encryptionCert != null)
             options.AddEncryptionCertificate(encryptionCert);
@@ -77,7 +79,11 @@ builder.Services.AddOpenIddict()
                .EnableTokenEndpointPassthrough()
                .EnableUserInfoEndpointPassthrough()
                .EnableEndSessionEndpointPassthrough();
-               // Transport 보안 요구는 운영에서 HTTPS를 강제하므로 비활성화하지 않습니다.
+
+        if (builder.Environment.IsDevelopment())
+        {
+            options.UseAspNetCore().DisableTransportSecurityRequirement();
+        }
     })
     .AddValidation(options =>
     {

@@ -1,128 +1,100 @@
 # 🏢 NSquareHomepage (엔스퀘어 사내 통합 홈페이지 & SSO 시스템)
 
-클린 아키텍처(Clean Architecture) 및 EF Core Code-First 구조 기반으로 제작된 엔스퀘어 사내 통합 백엔드 API 및 OIDC SSO(Single Sign-On) 인증 서버 프로젝트입니다.
+OIDC SSO(Single Sign-On) 기반의 세션-JWT 이중 보안 아키텍처와 Clean Architecture로 구축된 엔스퀘어 사내 통합 시스템입니다.  
+본 시스템은 **[sso_pipeline_specification.md](file:///C:/NSquareHomepage/sso_pipeline_specification.md)** 명세를 엄격히 준수하여 역할을 엄격히 분리한 3개의 독립 서버로 운영됩니다.
 
 ---
 
-## 📐 프로젝트 구조 (Project Architecture)
-
-이 프로젝트는 **Clean Architecture** 원칙을 엄격히 준수하여 4개의 독립된 레이어 계층으로 구성되어 있으며, 사내 통합 인증을 위한 **`nsq_auth` SSO 서버**와 연동됩니다.
+## 📐 시스템 컴포넌트 아키텍처 (System Architecture)
 
 ```text
 C:\NSquareHomepage\
-├── HomepagePrototype/                      # 🏢 사내 홈페이지 Web API 솔루션
-│   ├── Prototype.slnx
+├── ServiceServer/                          # 🖥️ [2. 서비스 서버] BFF 웹 서버 & 세션 관리자 (:7001)
+│   ├── ServiceServer.slnx
 │   └── src/
-│       ├── Prototype.Domain/               # 💎 [Domain Layer] 순수 도메인 엔티티
-│       │   └── Entities/
-│       │       ├── CompanyInfo.cs          # 회사 소개 및 서비스 엔티티
-│       │       └── CompanyHistory.cs       # 연혁 엔티티
-│       │
-│       ├── Prototype.Application/          # ⚙️ [Application Layer] 유스케이스 및 DTO
-│       │   ├── DTOs/
-│       │   │   ├── About/                  # AboutDtos
-│       │   │   ├── Service/                # ServiceDtos
-│       │   │   └── History/                # CompanyHistoryDtos
-│       │   └── UseCases/
-│       │       ├── About/                  # GetAboutUseCase, UpdateAboutUseCase
-│       │       ├── Service/                # GetServiceUseCase, UpdateServiceUseCase
-│       │       └── History/                # GetCompanyHistoriesUseCase, CreateCompanyHistoryUseCase ...
-│       │
-│       ├── Prototype.Infrastructure/       # 🗄️ [Infrastructure Layer] DB & EF Core
-│       │   ├── Persistence/
-│       │   │   ├── ApplicationDbContext.cs
-│       │   │   └── Configurations/        # Fluent API 테이블 매핑
-│       │   └── Migrations/                 # EF Core Code-First 마이그레이션
-│       │
-│       └── Prototype.Api/                  # 🌐 [Presentation Layer] RESTful Web API
-│           ├── Controllers/
-│           │   ├── AboutController.cs      # GET/PUT /api/Home/about
-│           │   ├── ServicesController.cs   # GET/PUT /api/Home/service
-│           │   ├── HistoriesController.cs  # GET/PUT /api/Home/history
-│           │   └── AuthController.cs       # Dev Admin JWT 토큰 발급 & 로그인
-│           └── Middlewares/                # Custom Exception, Logging, Auth 미들웨어
+│       └── ServiceServer.Api/              # OIDC SSO(BFF), 세션 쿠키 관리 (CRUD 일체 없음)
+│           ├── Controllers/                # AuthController (/api/auth/login, /signin-oidc, /api/auth/me, /api/auth/logout)
+│           └── Middlewares/                # 예외 처리, 로깅, 커스텀 인증 미들웨어
 │
-├── nsq_auth/                               # 🔐 [SSO Auth Server] OpenIddict OIDC 인증 서버
+├── ResourceServer/                         # 📦 [3. 리소스 서버] 데이터 API 서버 (모든 CRUD 전담 & Zero-Trust) (:7002)
+│   ├── ResourceServer.slnx
+│   └── src/
+│       ├── ResourceServer.Domain/          # 💎 [Domain Layer] 순수 엔티티 (CompanyInfo, CompanyHistory)
+│       ├── ResourceServer.Application/     # ⚙️ [Application Layer] 비즈니스 유스케이스 & DTOs
+│       ├── ResourceServer.Infrastructure/  # 🗄️ [Infrastructure Layer] EF Core DbContext, SQLite/MSSQL 지원
+│       └── ResourceServer.Api/             # 🌐 [Presentation Layer] CRUD RESTful API & JWT Bearer 검증
+│           └── Controllers/                # AboutController, ServicesController, HistoriesController
+│
+├── nsq_auth/                               # 🔐 [4. 인증 서버] OpenIddict OIDC 통합 인증 서버 (:7213)
 │   ├── AuthServer.slnx
 │   └── src/
 │       ├── Domain/ & Application/ & Infrastructure/
-│       └── Web/                            # OIDC OpenIddict (connect/authorize, connect/token)
+│       └── Web/                            # OIDC 엔드포인트 (/connect/authorize, /connect/token, /login)
 │
+├── sso_pipeline_specification.md           # 📜 SSO 2-Track 파이프라인 및 8대 자격증명 상세 명세서
 └── Nsq_HomepageServer.postman_collection.json # 📄 Postman API 테스팅 콜렉션 파일
 ```
 
 ---
 
-## 🛠️ 기술 스택 (Tech Stack)
+## 🔄 역할 분리 및 처리 파이프라인
 
-- **Framework**: .NET 10 Web API
-- **Architecture**: Clean Architecture (Presentation ➔ Infrastructure ➔ Application ➔ Domain)
-- **ORM / Database**: Entity Framework Core 10 (Code-First)
-- **Database Server**: **SQLite** (`homepage.db` 자동 생성) & **SQL Server / MariaDB** 지원
-- **Authentication**: JWT Bearer Authentication & OpenIddict OIDC SSO (`nsq_auth`)
-- **API Documentation**: Swashbuckle Swagger UI (`/swagger`) with Bearer Authorization
+- **ServiceServer (`:7001`)**: 연혁, 서비스, 회사 소개에 대한 CRUD를 일체 포함하지 않으며, **오직 OIDC SSO 인증, PKCE 검증, 세션 쿠키 발급 및 전역 로그아웃 관리**만 전담합니다.
+- **ResourceServer (`:7002`)**: 연혁, 서비스, 회사 소개에 대한 **모든 CRUD를 전담**하며, [트랙 A: 공개 조회 `GET`]와 [트랙 B: 관리자 `PUT` (JWT Bearer Token + Role == Admin 검증)]로 처리합니다.
 
 ---
 
-## 🌐 RESTful API 명세표 (API Specifications)
+## 🛠️ 컴포넌트별 기술 스택 및 포트 구성
 
-| 도메인 | HTTP Method | Endpoint | 설명 | 권한 요구사항 |
+| 컴포넌트 | 실행 포트 | 주요 기술 및 역할 | 비고 |
+| :--- | :--- | :--- | :--- |
+| **AuthServer** (`nsq_auth`) | `https://localhost:7213`<br/>`http://localhost:5123` | .NET 10, OpenIddict 6, MariaDB, PKCE 원사이드 검증, OIDC 토큰 세트 발급 | 통합 인증 IdP |
+| **ServiceServer** | `https://localhost:7001`<br/>`http://localhost:5016` | .NET 10 Web API, BFF 아키텍처, `HttpOnly` 서비스 세션 쿠키 발급 및 OIDC 로그인 관리 | 웹 세션 관리자 |
+| **ResourceServer** | `https://localhost:7002`<br/>`http://localhost:5002` | .NET 10 Web API, Clean Architecture, EF Core 10 (SQLite/MSSQL), Zero-Trust JWT 인가 | 데이터 CRUD 리소스 서버 |
+
+---
+
+## 🌐 엔드포인트 명세표 (API Specifications)
+
+### 1. ServiceServer (:7001) — 인증 & 세션 엔드포인트 (CRUD 없음)
+| Method | Endpoint | 설명 | 권한 요구사항 |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/auth/login` | PKCE 키 생성 및 IdP 인가 주소 반환 | 누구나 |
+| `GET/POST` | `/signin-oidc` | IdP 콜백 수신, 토큰 백채널 교환 및 서비스 세션 쿠키 발급 | IdP 인가 코드 필요 |
+| `GET` | `/api/auth/me` | 현재 서비스 세션 사용자 정보 조회 | **서비스 세션 쿠키 필요** |
+| `GET/POST` | `/api/auth/logout` | 서비스 세션 파기 및 IdP 전역 로그아웃 | 누구나 |
+| `GET` | `/signout-callback-oidc` | 전역 로그아웃 완료 화면 | 누구나 |
+
+### 2. ResourceServer (:7002) — 데이터 CRUD 리소스 엔드포인트
+| 도메인 | Method | Endpoint | 설명 | 권한 요구사항 |
 | :--- | :--- | :--- | :--- | :--- |
-| **About** | `GET` | `/api/Home/about` | 회사 소개 정보 조회 | 누구나 |
-| **About** | `PUT` | `/api/Home/about` | 회사 소개 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
-| **Services** | `GET` | `/api/Home/service` | 회사 주요 서비스 정보 조회 | 누구나 |
-| **Services** | `PUT` | `/api/Home/service` | 회사 주요 서비스 정보 수정 | **SSO JWT 인증 필요 (🔒)** |
-| **Histories** | `GET` | `/api/Home/history` | 전체 연혁 목록 조회 | 누구나 |
-| **Histories** | `PUT` | `/api/Home/history` | 연혁 항목 입력/추가 | **SSO JWT 인증 필요 (🔒)** |
-| **Auth (Dev)** | `POST` | `/api/auth/login` | 개발/테스트용 관리자 로그인 | 누구나 |
-| **Auth (Dev)** | `GET` | `/api/auth/dev-token` | Swagger UI 테스트용 Admin JWT 토큰 발급 | 누구나 |
+| **About** | `GET` | `/api/Home/about` | [트랙 A] 회사 소개 조회 | `[AllowAnonymous]` (누구나) |
+| **About** | `PUT` | `/api/Home/about` | [트랙 B] 회사 소개 수정 | `[Authorize(Roles = "Admin")]` (JWT Bearer) |
+| **Services** | `GET` | `/api/Home/service` | [트랙 A] 주요 서비스 정보 조회 | `[AllowAnonymous]` (누구나) |
+| **Services** | `PUT` | `/api/Home/service` | [트랙 B] 주요 서비스 정보 수정 | `[Authorize(Roles = "Admin")]` (JWT Bearer) |
+| **Histories** | `GET` | `/api/Home/history` | [트랙 A] 전체 연혁 목록 조회 | `[AllowAnonymous]` (누구나) |
+| **Histories** | `PUT` | `/api/Home/history` | [트랙 B] 연혁 항목 저장/추가 | `[Authorize(Roles = "Admin")]` (JWT Bearer) |
 
 ---
 
-## 🚀 백엔드 & 인증 서버 실행 방법
+## 🚀 전체 서버 실행 방법
 
-### 1. 사내 홈페이지 Web API 서버 실행
+각 서버를 별도의 터미널 창에서 순서대로 실행합니다:
+
+### 1. OIDC SSO 인증 서버 (`nsq_auth`) 실행
 ```bash
-dotnet run --project HomepagePrototype/src/Prototype.Api --urls "http://localhost:5000"
+dotnet run --project nsq_auth/src/Web --launch-profile https
 ```
-- **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
+- **Swagger UI**: [https://localhost:7213/swagger](https://localhost:7213/swagger) (또는 [http://localhost:5123/swagger](http://localhost:5123/swagger))
 
-### 2. OIDC SSO 인증 서버 (`nsq_auth`) 실행
+### 2. 데이터 리소스 서버 (`ResourceServer`) 실행
 ```bash
-dotnet run --project nsq_auth/src/Web
+dotnet run --project ResourceServer/src/ResourceServer.Api --launch-profile https
 ```
-- **HTTP 주소**: `http://localhost:5123`
-- **HTTPS 주소**: `https://localhost:7213`
-- **Swagger UI 접속**: [http://localhost:5123/swagger](http://localhost:5123/swagger)
+- **Swagger UI**: [https://localhost:7002/swagger](https://localhost:7002/swagger) (또는 [http://localhost:5002/swagger](http://localhost:5002/swagger))
 
----
-
-## 🔑 SSO 인증 & Swagger UI 테스트 가이드
-
-1. **Swagger UI 접속**: [http://localhost:5000/swagger](http://localhost:5000/swagger)
-2. **테스트용 Admin JWT 토큰 발급**:
-   - Swagger UI에서 `GET /api/auth/dev-token` ➔ `Try it out` ➔ `Execute` 실행
-   - 응답으로 출력되는 `access_token` 문자열 값 복사 (예: `eyJhbGci...`)
-3. **Swagger UI 인증 수락**:
-   - 우측 상단 🟢 **`Authorize (🔒)`** 버튼 클릭
-   - 복사한 JWT 토큰 값만 입력란에 붙여넣기 (`Bearer ` 접두사는 자동 추가됨) ➔ `Authorize` 클릭
-4. **보호된 API 테스트**:
-   - `PUT /api/Home/about`, `PUT /api/Home/service`, `PUT /api/Home/history` 실행 시 데이터 수정 및 저장 확인!
-
----
-
-## 📄 Postman API 콜렉션 활용
-
-프로젝트 루트에 포함된 `Nsq_HomepageServer.postman_collection.json` 파일은 모든 API 테스트 규격을 담고 있습니다.
-
-1. Postman 실행 ➔ `Import` 클릭
-2. `Nsq_HomepageServer.postman_collection.json` 파일 선택
-3. 환경 변수 `baseUrl`을 `http://localhost:5000`으로 설정 후 API 테스팅 진행
-
----
-
-## 🚀 Git & GitHub 게시 정보
-
-- **Repository**: `https://github.com/ZeroJ1nZero/NSquareHomepage.git`
-- **Git Config**: `user.name` = `ZeroJ1nZero`, `user.email` = `ZeroJ1nZero@github.com`
-- **민감 정보 보호**: 비밀번호, 데이터베이스파일(`.db`), 빌드 결과물(`bin/`, `obj/`)은 `.gitignore`에 의해 안전하게 제외되어 있습니다.
+### 3. 서비스 웹 서버 (`ServiceServer`) 실행
+```bash
+dotnet run --project ServiceServer/src/ServiceServer.Api --launch-profile https
+```
+- **Swagger UI**: [https://localhost:7001/swagger](https://localhost:7001/swagger) (또는 [http://localhost:5016/swagger](http://localhost:5016/swagger))
