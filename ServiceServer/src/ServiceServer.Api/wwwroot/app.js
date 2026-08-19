@@ -127,9 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <span class="user-role-badge">${currentUser.role}</span>
           <span class="user-name-label">${currentUser.userName}</span>
         </div>
-        <button id="btnLogout" class="btn btn-secondary btn-sm">로그아웃</button>
       `;
-      document.getElementById('btnLogout').addEventListener('click', handleLogout);
 
       sessionIndicator.className = 'status-indicator admin';
       sessionRoleText.textContent = `관리자 (${currentUser.role}) [트랙 B]`;
@@ -179,25 +177,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       log('SSO', `로그인 통신 오류: ${err.message}`, 'error');
-    }
-  }
-
-  async function handleLogout() {
-    log('SSO', '전역 로그아웃 요청 전송 (POST /api/auth/global-logout)');
-    try {
-      const res = await fetch('/api/auth/global-logout', { method: 'POST', credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        log('SSO', '서비스 세션 파기 완료. 전역 로그아웃을 진행합니다.', 'success');
-        showToast('로그아웃 되었습니다.', 'info');
-        if (data.idp_logout_url) {
-          window.location.href = data.idp_logout_url;
-        } else {
-          await checkAuthStatus();
-        }
-      }
-    } catch (err) {
-      log('SSO', `로그아웃 오류: ${err.message}`, 'error');
     }
   }
 
