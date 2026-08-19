@@ -47,7 +47,7 @@ public class AuthController : ControllerBase
     /// 2. **Step 2**: 서비스 서버가 code_verifier(원본키), code_challenge(해시키), state(CSRF키)를 생성하고 세션에 보관한 뒤 authorize_url을 발급합니다.<br />
     /// 3. **Step 3**: 클라이언트는 반환된 authorize_url로 이동하여 인증 서버(:7213) 로그인을 진행합니다.
     /// </remarks>
-    [HttpGet("api/auth/login")]
+    [HttpGet("api/auth/start-sso")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     public IActionResult Login([FromQuery] string? redirectUri = null)
     {
@@ -71,12 +71,12 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// [테스트/직통 검증] 아이디/비밀번호 직접 검증 및 세션 발급 (Pipeline 외 보조 기능)
+    /// [테스트] 아이디/비밀번호 직접 검증 및 세션 발급 (Pipeline 외 보조 기능)
     /// </summary>
     /// <remarks>
     /// Swagger UI 또는 웹 화면에서 아이디와 비밀번호를 직접 입력받아 인증 서버에서 일치 여부를 검증하고, 검증 성공 시 관리자 서비스 세션 쿠키를 발급합니다.
     /// </remarks>
-    [HttpPost("api/auth/login")]
+    [HttpPost("api/tools/direct-login")]
     [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
     public async Task<IActionResult> LoginWithCredentials(
         [FromBody] LoginRequestDto dto,
@@ -160,6 +160,7 @@ public class AuthController : ControllerBase
     /// 4. **Step 11**: 인증 서버가 PKCE 검증 후 Access/Refresh 토큰을 발급합니다.<br />
     /// 5. **Step 12**: 서비스 서버가 토큰을 내부 세션에 은폐 보관하고 브라우저에 .NsqHomepage.ServiceSession 쿠키를 발급합니다.
     /// </remarks>
+    [HttpGet("api/auth/oidc-callback")]
     [HttpGet("signin-oidc")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     public async Task<IActionResult> SigninOidcGet(
@@ -254,12 +255,12 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// [테스트/수동 교환] Swagger/Postman용 인가 코드 + verifier 수동 토큰 교환 (Pipeline 외 보조 기능)
+    /// [테스트] Swagger/Postman용 인가 코드 + verifier 수동 토큰 교환 (Pipeline 외 보조 기능)
     /// </summary>
     /// <remarks>
     /// Swagger UI에서 인가 코드(`code`)와 `code_verifier`를 직접 입력하여 백채널 토큰 교환 및 세션 쿠키를 발급받을 수 있습니다.
     /// </remarks>
-    [HttpPost("signin-oidc")]
+    [HttpPost("api/tools/manual-token-exchange")]
     [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
     public async Task<IActionResult> SigninOidcPost([FromBody] TokenExchangeRequest request, CancellationToken cancellationToken)
     {
@@ -309,7 +310,7 @@ public class AuthController : ControllerBase
     /// <remarks>
     /// 발급받은 `.NsqHomepage.ServiceSession` 쿠키를 기반으로 현재 사용자의 Claims(NameIdentifier, Role, Email 등)를 확인합니다.
     /// </remarks>
-    [HttpGet("api/auth/me")]
+    [HttpGet("api/auth/user-identity")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     public IActionResult GetCurrentUser()
@@ -326,12 +327,12 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// [전역 로그아웃] 서비스 세션 파기 및 AuthServer 전역 SSO 로그아웃 (Pipeline 외)
+    /// [세션 종료] 서비스 세션 파기 및 AuthServer 전역 SSO 로그아웃 (Pipeline 외)
     /// </summary>
     /// <remarks>
     /// 서비스 세션을 파기하고 인증 서버(`https://localhost:7213/connect/logout`)로 이동하여 모든 사내 서비스의 SSO 세션을 종료합니다.
     /// </remarks>
-    [HttpGet("api/auth/logout"), HttpPost("api/auth/logout")]
+    [HttpPost("api/auth/global-logout")]
     [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
     public async Task<IActionResult> Logout([FromQuery] string? postLogoutRedirectUri = null)
     {

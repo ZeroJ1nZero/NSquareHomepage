@@ -25,6 +25,8 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var allowedRedirectUris = new HashSet<Uri>
         {
             new Uri(config["Clients:Homepage:RedirectUri"] ?? "https://localhost:7001/signin-oidc"),
+            new Uri("https://localhost:7001/api/auth/oidc-callback"),
+            new Uri("http://localhost:5016/api/auth/oidc-callback"),
             new Uri("http://localhost:5016/signin-oidc"),
             new Uri("http://localhost:5000/signin-oidc")
         };

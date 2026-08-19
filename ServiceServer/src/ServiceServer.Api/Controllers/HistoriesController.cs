@@ -7,7 +7,6 @@ using ServiceServer.Api.Services;
 namespace ServiceServer.Api.Controllers;
 
 [ApiController]
-[Route("api/Home/history")]
 public class HistoriesController : ControllerBase
 {
     private readonly IResourceApiClient _resourceApiClient;
@@ -20,12 +19,12 @@ public class HistoriesController : ControllerBase
     }
 
     /// <summary>
-    /// [트랙 A: 공개 조회] 전체 연혁 목록 조회 (로그인 불필요 ➔ ResourceServer 대행)
+    /// [트랙 A: 공개 조회] 전체 연혁 목록 공개 조회 (로그인 불필요 ➔ ResourceServer 대행)
     /// </summary>
     /// <remarks>
     /// 세션 검사 없이 ResourceServer(:7002)의 전체 연혁 목록을 즉시 대행 호출하여 반환합니다.
     /// </remarks>
-    [HttpGet]
+    [HttpGet("api/public/company-histories")]
     [AllowAnonymous]
     [Tags("2. [파이프라인 2-A] 공개 데이터 조회 (트랙 A: 로그인 불필요)")]
     public async Task<ActionResult<HistoryContainerDto>> GetHistories(CancellationToken cancellationToken)
@@ -42,7 +41,7 @@ public class HistoriesController : ControllerBase
     /// 2. 검증 통과 시 세션 내 Access Token을 `Bearer` 헤더로 첨부하여 ResourceServer(:7002)로 전송합니다.<br/>
     /// 3. 미인증 시 **Step 1~2**가 자동 발동하여 PKCE/CSRF 키를 생성하고 IdP 로그인 주소로 **302 리다이렉트**합니다.
     /// </remarks>
-    [HttpPut]
+    [HttpPut("api/admin/company-histories")]
     [Tags("3. [파이프라인 2-B] 관리자 데이터 처리 (트랙 B: Role == Admin)")]
     public async Task<IActionResult> SaveHistories(
         [FromBody] SaveHistoryRequestDto dto,
@@ -50,7 +49,7 @@ public class HistoriesController : ControllerBase
     {
         if (User.Identity?.IsAuthenticated != true || !User.IsInRole("Admin"))
         {
-            var (_, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(HttpContext, "/api/Home/history");
+            var (_, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(HttpContext, "/api/admin/company-histories");
             Response.Headers.Location = authorizeUrl;
             return StatusCode(StatusCodes.Status302Found, new
             {

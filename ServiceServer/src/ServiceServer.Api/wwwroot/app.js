@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function checkAuthStatus() {
     log('AUTH', '현재 서비스 세션 쿠키(.NsqHomepage.ServiceSession) 확인 중...');
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const res = await fetch('/api/auth/user-identity', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         currentUser = {
@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     log('AUTH', `[계정 검증] 인증 서버(:7213)로 아이디(${email}) 및 비밀번호 검증 요청 전송...`, 'info');
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/tools/direct-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -238,9 +238,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleSsoRedirect() {
-    log('SSO', '[Step 1~2] OIDC 표준 SSO 로그인 시작 (GET /api/auth/login)');
+    log('SSO', '[Step 1~2] OIDC 표준 SSO 로그인 시작 (GET /api/auth/start-sso)');
     try {
-      const res = await fetch('/api/auth/login');
+      const res = await fetch('/api/auth/start-sso');
       if (res.ok) {
         const data = await res.json();
         log('SSO', `[Step 2] PKCE challenge: ${data.code_challenge.substring(0, 10)}..., state: ${data.state}`, 'info');
@@ -256,9 +256,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function handleLogout() {
-    log('SSO', '전역 로그아웃 요청 전송 (POST /api/auth/logout)');
+    log('SSO', '전역 로그아웃 요청 전송 (POST /api/auth/global-logout)');
     try {
-      const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      const res = await fetch('/api/auth/global-logout', { method: 'POST', credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         log('SSO', '서비스 세션 파기 완료. 전역 로그아웃을 진행합니다.', 'success');
@@ -278,9 +278,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // 3. Track A: Public GET Requests (회사 소개, 서비스, 연혁)
   // =========================================================================
   async function loadAbout() {
-    log('트랙 A', '회사 소개 정보 조회 (GET /api/Home/about) -> ResourceServer 대행 호출');
+    log('트랙 A', '회사 소개 정보 조회 (GET /api/public/company-about) -> ResourceServer 대행 호출');
     try {
-      const res = await fetch('/api/Home/about');
+      const res = await fetch('/api/public/company-about');
       if (res.ok) {
         aboutData = await res.json();
         aboutContentText.textContent = aboutData.introduction || '(등록된 회사 소개가 없습니다. 관리자로 로그인하여 등록하세요)';
@@ -296,9 +296,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadService() {
-    log('트랙 A', '회사 서비스 정보 조회 (GET /api/Home/service) -> ResourceServer 대행 호출');
+    log('트랙 A', '회사 서비스 정보 조회 (GET /api/public/company-services) -> ResourceServer 대행 호출');
     try {
-      const res = await fetch('/api/Home/service');
+      const res = await fetch('/api/public/company-services');
       if (res.ok) {
         serviceData = await res.json();
         serviceContentText.textContent = serviceData.service || '(등록된 주요 서비스가 없습니다. 관리자로 로그인하여 등록하세요)';
@@ -314,32 +314,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadHistory() {
-    log('트랙 A', '회사 전체 연혁 목록 조회 (GET /api/Home/history) -> ResourceServer 대행 호출');
+    log('트랙 A', '회사 전체 연혁 목록 조회 (GET /api/public/company-histories) -> ResourceServer 대행 호출');
     try {
-      const res = await fetch('/api/Home/history');
+      const res = await fetch('/api/public/company-histories');
       if (res.ok) {
         const data = await res.json();
         historyList = data.history || [];
         renderHistoryTimeline(historyList);
-        log('트랙 A', `회사 연혁 목록 수신 완료 (${historyList.length}건, 200 OK)`, 'success');
+        log('트랙 A', `연혁 데이터 수신 완료 (${historyList.length}건, 200 OK)`, 'success');
       } else {
-        log('트랙 A', `회사 연혁 조회 실패: ${res.status}`, 'error');
+        historyTimeline.innerHTML = '<div class="timeline-empty">연혁 데이터를 불러올 수 없습니다.</div>';
+        log('트랙 A', `연혁 조회 실패: ${res.status}`, 'error');
       }
     } catch (err) {
-      log('트랙 A', `회사 연혁 통신 오류: ${err.message}`, 'error');
+      log('트랙 A', `연혁 통신 오류: ${err.message}`, 'error');
     }
   }
 
   function renderHistoryTimeline(list) {
     if (!list || list.length === 0) {
-      historyTimeline.innerHTML = '<div class="empty-timeline-msg">등록된 연혁이 없습니다. 관리자로 로그인하여 연혁을 추가해 보세요.</div>';
+      historyTimeline.innerHTML = '<div class="timeline-empty">등록된 회사 연혁이 없습니다.</div>';
       return;
     }
 
     historyTimeline.innerHTML = list.map(item => `
       <div class="timeline-item">
         <div class="timeline-date">${item.data || item.date || '-'}</div>
-        <div class="timeline-content">${item.content}</div>
+        <div class="timeline-content">${item.content || ''}</div>
       </div>
     `).join('');
   }
@@ -371,9 +372,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    log('트랙 B', '회사 소개 수정 요청 전송 (PUT /api/Home/about, 관리자 세션 쿠키 첨부)');
+    log('트랙 B', '회사 소개 수정 요청 전송 (PUT /api/admin/company-about, 관리자 세션 쿠키 첨부)');
     try {
-      const res = await fetch('/api/Home/about', {
+      const res = await fetch('/api/admin/company-about', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ introduction: newContent }),
@@ -421,9 +422,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    log('트랙 B', '서비스 정보 수정 요청 전송 (PUT /api/Home/service, 관리자 세션 쿠키 첨부)');
+    log('트랙 B', '서비스 정보 수정 요청 전송 (PUT /api/admin/company-services, 관리자 세션 쿠키 첨부)');
     try {
-      const res = await fetch('/api/Home/service', {
+      const res = await fetch('/api/admin/company-services', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ service: newService }),
@@ -472,9 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    log('트랙 B', `새 연혁 항목 추가 요청 (PUT /api/Home/history, [${dateVal}] ${contentVal})`);
+    log('트랙 B', `새 연혁 항목 추가 요청 (PUT /api/admin/company-histories, [${dateVal}] ${contentVal})`);
     try {
-      const res = await fetch('/api/Home/history', {
+      const res = await fetch('/api/admin/company-histories', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
