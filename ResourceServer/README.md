@@ -1,4 +1,4 @@
-﻿# 📦 ResourceServer (독립 데이터 리소스 API 서버)
+# 📦 ResourceServer (독립 데이터 리소스 API 서버)
 
 엔스퀘어 사내 플랫폼의 회사 소개, 서비스, 연혁 데이터를 전담 관리하는 **독립 데이터 리소스 REST API 서버**입니다.  
 **Clean Architecture 4계층**과 **Zero-Trust JWT Bearer 보안 모델**을 준수합니다.
@@ -13,10 +13,10 @@ ResourceServer/
 ├── Dockerfile
 ├── README.md
 └── src/
-    ├── ResourceServer.Domain/            # [1. Domain] 순수 엔티티 (CompanyAbout, CompanyService, CompanyHistory)
-    ├── ResourceServer.Application/       # [2. Application] 비즈니스 유스케이스 (CRUD 9개), DTO, Interfaces
-    ├── ResourceServer.Infrastructure/    # [3. Infrastructure] EF Core DbContext, DB 매핑 설정 (SQL Server / SQLite)
-    └── ResourceServer.Api/               # [4. Presentation] REST 컨트롤러, JWT Bearer 검증 미들웨어, Swagger UI
+    ├── Domain/            # [1. Domain] 순수 엔티티 (CompanyAbout, CompanyService, CompanyHistory)
+    ├── Application/       # [2. Application] 비즈니스 유스케이스 (CRUD 9개), DTO, Interfaces
+    ├── Infrastructure/    # [3. Infrastructure] EF Core DbContext, DB 매핑 설정 (SQL Server / SQLite)
+    └── Api/               # [4. Presentation] REST 컨트롤러, JWT Bearer 검증 미들웨어, Swagger UI
 ```
 
 ---
@@ -53,7 +53,7 @@ dotnet build ResourceServer.slnx
 
 ### 2. 서버 실행
 ```powershell
-dotnet run --project src/ResourceServer.Api --launch-profile https
+dotnet run --project src/Api --launch-profile https
 # 접속 주소: https://localhost:7002
 # Swagger UI: https://localhost:7002/swagger
 ```

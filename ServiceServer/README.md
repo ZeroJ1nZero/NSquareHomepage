@@ -1,4 +1,4 @@
-﻿# 🖥️ ServiceServer (BFF 세션 관리자 & 웹 게이트웨이)
+# 🖥️ ServiceServer (BFF 세션 관리자 & 웹 게이트웨이)
 
 엔스퀘어 사내 통합 홈페이지의 **웹 호스팅(SPA)**, **OIDC Authorization Code Flow + PKCE SSO**, **BFF 세션 관리**, **ResourceServer 게이트웨이**를 전담하는 서버입니다.  
 **Clean Architecture 4계층**과 **sso_pipeline_specification.md 규격**을 준수합니다.
@@ -13,10 +13,10 @@ ServiceServer/
 ├── Dockerfile
 ├── README.md
 └── src/
-    ├── ServiceServer.Domain/            # [1. Domain] PKCE 상태, 세션 사용자 정보, 데이터 모델
-    ├── ServiceServer.Application/       # [2. Application] 트랙 A/B 유스케이스, OIDC 토큰/상태 인터페이스, DTOs
-    ├── ServiceServer.Infrastructure/    # [3. Infrastructure] ResourceServer HTTP 클라이언트, OIDC 백채널 통신
-    └── ServiceServer.Api/               # [4. Presentation] Auth/About/Service/History 컨트롤러, wwwroot UI, Swagger UI
+    ├── Domain/            # [1. Domain] PKCE 상태, 세션 사용자 정보, 데이터 모델
+    ├── Application/       # [2. Application] 트랙 A/B 유스케이스, OIDC 토큰/상태 인터페이스, DTOs
+    ├── Infrastructure/    # [3. Infrastructure] ResourceServer HTTP 클라이언트, OIDC 백채널 통신
+    └── Api/               # [4. Presentation] Auth/About/Service/History 컨트롤러, wwwroot UI, Swagger UI
 ```
 
 ---
@@ -58,7 +58,7 @@ dotnet build ServiceServer.slnx
 
 ### 2. 서버 실행
 ```powershell
-dotnet run --project src/ServiceServer.Api --launch-profile https
+dotnet run --project src/Api --launch-profile https
 # 홈페이지 접속: https://localhost:7001
 # Swagger UI: https://localhost:7001/swagger
 ```

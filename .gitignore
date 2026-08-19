@@ -8,21 +8,58 @@
 build/
 dist/
 out/
+publish/
+[Aa]pp[Dd]ata/
 
 ## ==========================================
 ## IDE & Editor Settings (Visual Studio, VS Code, Rider)
 ## ==========================================
 .vs/
+**/.vs/
 .idea/
+**/.idea/
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 *.user
+*.userprefs
 *.userosscache
 *.sln.docstates
 *.suo
+*.sln.ide
+
+## ==========================================
+## Sensitive Configurations & Secrets
+## ==========================================
+# Production & Local configuration files containing credentials
+appsettings.Production.json
+appsettings.*.Production.json
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.*.local.json
+secrets.json
+*.secret.json
+*UserSecrets*
+
+# Environment variable files
+.env
+.env.*
+*.env
+*.env.local
+*.env.*.local
+
+# Certificates & Private Keys
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.pkcs12
+*.rsa
 
 ## ==========================================
 ## Database & Local Storage Exclusions
@@ -30,23 +67,16 @@ out/
 *.db
 *.db-shm
 *.db-wal
-*.mdf
-*.ldf
 *.sqlite
 *.sqlite3
-homepage.db
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.sql.dump
 mssqllocaldb/
-
-## ==========================================
-## Sensitive Configurations & Environment Secrets
-## ==========================================
-appsettings.Local.json
-*.env
-*.env.local
-*.pem
-*.key
-*.pfx
-*.crt
+mariadb_data/
+sqlserver_data/
 
 ## ==========================================
 ## Operating System & Temporary Files
@@ -65,3 +95,5 @@ Desktop.ini
 ## ==========================================
 TestResults/
 *.log
+*.trx
+*.coverage

@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   # 1. MariaDB (AuthServer DB)
@@ -12,21 +12,6 @@ services:
       - "3306:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
-    networks:
-      - nsquare-network
-
-  # 2. SQL Server (ResourceServer DB)
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
-    container_name: nsquare-sqlserver
-    environment:
-      ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Password123!"
-      MSSQL_PID: "Express"
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqlserver_data:/var/opt/mssql
     networks:
       - nsquare-network
 
@@ -54,11 +39,11 @@ services:
       dockerfile: Dockerfile
     container_name: nsquare-resourceserver
     depends_on:
-      - sqlserver
+      - mariadb
       - authserver
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=sqlserver,1433;Database=NSquareResourceDb;User Id=sa;Password=Password123!;TrustServerCertificate=True;
+      - ConnectionStrings__DefaultConnection=Server=mariadb;Port=3306;Database=NSquareResourceDb;User=root;Password=password123!;
       - Authentication__Authority=https://authserver:7213
     ports:
       - "7002:7002"
@@ -91,4 +76,3 @@ networks:
 
 volumes:
   mariadb_data:
-  sqlserver_data:

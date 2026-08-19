@@ -1,4 +1,4 @@
-﻿# 🏢 N-SQUARE 통합 플랫폼 (Microservice & Clean Architecture Ecosystem)
+# 🏢 N-SQUARE 통합 플랫폼 (Microservice & Clean Architecture Ecosystem)
 
 엔스퀘어 사내 통합 플랫폼은 **3개의 독립된 서버 프로젝트**로 완벽히 분리되어 구성되어 있습니다. 각 서버는 독립된 Git 저장소, 독립된 솔루션 파일, 독립된 Dockerfile을 보유하며 Clean Architecture 4계층 구조를 따릅니다.
 
@@ -47,11 +47,11 @@ dotnet run --project AuthServer/src/Web --launch-profile https
 # -> https://localhost:7213
 
 # 2. 리소스 서버 실행 (ResourceServer)
-dotnet run --project ResourceServer/src/ResourceServer.Api --launch-profile https
+dotnet run --project ResourceServer/src/Api --launch-profile https
 # -> https://localhost:7002
 
 # 3. 서비스 서버 실행 (ServiceServer)
-dotnet run --project ServiceServer/src/ServiceServer.Api --launch-profile https
+dotnet run --project ServiceServer/src/Api --launch-profile https
 # -> https://localhost:7001
 ```
 
