@@ -1,0 +1,117 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="SSO 로그인 흐름" id="sso-login-flow">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- 참여자 -->
+        <mxCell id="actorB" value="사용자 브라우저" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="actorC" value="클라이언트&#10;(홈페이지 :7001)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="280" y="40" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="actorA" value="인증서버 (:5123)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="560" y="40" width="160" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="actorD" value="MariaDB" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="840" y="40" width="160" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- 라이프라인 -->
+        <mxCell id="lifeB" style="endArrow=none;dashed=1;html=1;strokeColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="80" as="sourcePoint" /><mxPoint x="120" y="1250" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="lifeC" style="endArrow=none;dashed=1;html=1;strokeColor=#82b366;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="360" y="80" as="sourcePoint" /><mxPoint x="360" y="1250" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="lifeA" style="endArrow=none;dashed=1;html=1;strokeColor=#d79b00;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="80" as="sourcePoint" /><mxPoint x="640" y="1250" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="lifeD" style="endArrow=none;dashed=1;html=1;strokeColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="920" y="80" as="sourcePoint" /><mxPoint x="920" y="1250" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- ===== 구간 A: 토큰 보유 시 (평상시) ===== -->
+        <mxCell id="secA" value="A. 토큰을 이미 갖고 있을 때 (평상시) — 아래 B 흐름은 실행되지 않음" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;align=left;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="960" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="A-1. API 호출 (Authorization: Bearer access토큰)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="360" y="160" as="sourcePoint" /><mxPoint x="640" y="160" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="a2" value="A-2. 200 OK (발급 후 15분 내면 유효)" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="205" as="sourcePoint" /><mxPoint x="360" y="205" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="a3" value="A-3. access 만료 시: POST /connect/token&#10;(grant_type=refresh_token) — 리다이렉트 없음, 조용히" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="360" y="260" as="sourcePoint" /><mxPoint x="640" y="260" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="a4" value="A-4. refresh 유효성 확인&#10;(OpenIddictTokens 장부)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="310" as="sourcePoint" /><mxPoint x="920" y="310" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="a5" value="A-5. 새 access token 발급" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="355" as="sourcePoint" /><mxPoint x="360" y="355" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="noteA" value="A-6. refresh까지 만료/폐기됐으면 → 아래 B 흐름 시작.&#10;※ 로그인 페이지 직행이 아니라 /connect/authorize로! (세션 쿠키가 살아 있으면 로그인 화면 없이 새 토큰 = SSO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=left;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="180" y="390" width="640" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ===== 구간 B: 전체 로그인 흐름 ===== -->
+        <mxCell id="secB" value="B. 토큰이 없거나 refresh까지 만료됐을 때 — 전체 흐름" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;fontStyle=1;align=left;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="455" width="960" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="b1" value="B-1. 로그인 버튼 클릭 (사용자가 누르는 유일한 버튼)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="515" as="sourcePoint" /><mxPoint x="360" y="515" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b2" value="B-2. /connect/authorize로 리다이렉트&#10;(client_id, redirect_uri, code_challenge)" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="360" y="570" as="sourcePoint" /><mxPoint x="120" y="570" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b3" value="B-3. GET /connect/authorize" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="620" as="sourcePoint" /><mxPoint x="640" y="620" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="noteB3" value="세션 쿠키 확인 (쿠키가 쓰이는 곳은 여기뿐)&#10;있으면 → B-4~B-7 생략하고 곧장 B-8 (SSO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="520" y="640" width="240" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="b4" value="B-4. (쿠키 없음) /login으로 리다이렉트 — returnUrl에 B-3 보존" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="715" as="sourcePoint" /><mxPoint x="120" y="715" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b5" value="B-5. 아이디/비밀번호 제출" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="765" as="sourcePoint" /><mxPoint x="640" y="765" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b6" value="B-6. User 조회 + 해시 검증, LoginAudit 기록" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="810" as="sourcePoint" /><mxPoint x="920" y="810" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b7" value="B-7. 세션 쿠키 발급(Id·이름·Role, 14일)&#10;+ returnUrl(authorize)로 자동 복귀" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="865" as="sourcePoint" /><mxPoint x="120" y="865" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b8" value="B-8. GET /connect/authorize (세션 쿠키 자동 제출)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="915" as="sourcePoint" /><mxPoint x="640" y="915" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b9" value="B-9. 일회용 인가 코드 생성 + 장부 기록&#10;(OpenIddictTokens: 미사용·수 분 뒤 만료)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="965" as="sourcePoint" /><mxPoint x="920" y="965" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b10" value="B-10. 클라이언트가 지정했던 redirect_uri로 리다이렉트 (?code=...)&#10;※ 서버는 화이트리스트 검사만. URL 구간이라 코드만 싣는다" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="1025" as="sourcePoint" /><mxPoint x="120" y="1025" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b11" value="B-11. GET /signin-oidc?code=... (브라우저의 역할은 여기까지)" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="120" y="1075" as="sourcePoint" /><mxPoint x="360" y="1075" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b12" value="B-12. 클라이언트가 POST /connect/token (code + code_verifier)&#10;※ 호출 주체는 클라이언트. 세션 쿠키는 여기서 쓰이지 않음" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="360" y="1130" as="sourcePoint" /><mxPoint x="640" y="1130" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b13" value="B-13. 장부 대조: 내가 발급? 미사용? 만료 전? verifier 일치?&#10;→ 통과 시 '사용됨(redeemed)' 도장 + 사용자 존재 재확인" style="endArrow=block;html=1;fontSize=12;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="1185" as="sourcePoint" /><mxPoint x="920" y="1185" as="targetPoint" /></mxGeometry>
+        </mxCell>
+        <mxCell id="b14" value="B-14. 토큰 3종: id_token + access(15분) + refresh(14일)&#10;→ 이후는 구간 A의 생활로" style="endArrow=block;html=1;fontSize=12;dashed=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="640" y="1240" as="sourcePoint" /><mxPoint x="360" y="1240" as="targetPoint" /></mxGeometry>
+        </mxCell>
+
+        <!-- 하단 요약 -->
+        <mxCell id="summary" value="핵심 구분 ─ 세션 쿠키: 브라우저↔인증서버 사이(B-3/B-8에서만 사용) · 인가 코드: URL 구간용 일회용 교환권(B-9~B-12) · 토큰: 클라이언트가 보관하며 API 호출에 사용(구간 A)&#10;클라이언트 역할(verifier·토큰 관리)은 서버형 앱이면 그 서버가, SPA면 브라우저 속 JS가 수행한다 — 역할은 항상 존재, 수행자만 다름" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=left;spacing=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1270" width="960" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -5,7 +5,7 @@
 
 ---
 
-## 📐 역할 및 아키텍처 (sso_pipeline_specification.md 준수)
+## 📐 역할 및 아키텍처 ([docs/sso_pipeline_specification.md](../docs/sso_pipeline_specification.md) 준수)
 
 1. **BFF 세션 관리자**:
    - 브라우저에 `HttpOnly`, `SameSite=Lax` 속성의 `.NsqHomepage.ServiceSession` 쿠키 발급 및 검증

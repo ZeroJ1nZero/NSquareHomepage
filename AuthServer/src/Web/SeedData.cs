@@ -17,7 +17,7 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureCreatedAsync(ct);
 
-        // 회사 홈페이지 클라이언트 등록 (nsq_auth/README.md 규격)
+        // 회사 홈페이지 클라이언트 등록 (AuthServer/README.md 규격)
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var clientId = config["Clients:Homepage:ClientId"] ?? "company-homepage";
         var existingApp = await manager.FindByClientIdAsync(clientId, ct);

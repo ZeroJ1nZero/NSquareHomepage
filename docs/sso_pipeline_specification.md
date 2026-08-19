@@ -3,9 +3,9 @@
 > **문서 목적**: 본 명세서는 사내 OIDC(OpenID Connect) 기반 SSO(Single Sign-On) 인증 및 인가 시스템 구축 시 발생하는 **모든 발급 코드, 토큰, 쿠키, 파라미터의 세부 명세(발급 주체, 보관 위치, 수명, 데이터 구조, 보안 방어 목적)와 컴포넌트 역할, 2-Track 파이프라인**을 완벽하게 정의한다.
 > 
 > **기준 참조 및 구현**:
-> - [AuthServer README.md](file:///C:/NSquareHomepage/nsq_auth/README.md) (.NET 10 + OpenIddict 6 / MariaDB)
-> - [OIDC 도입 보고서.md](file:///C:/NSquareHomepage/nsq_auth/docs/OIDC-%EB%8F%84%EC%9E%85-%EB%B3%B4%EA%B3%A0%EC%84%9C.md)
-> - [SSO 보안 심층 명세서 (sso_deep_specification.md)](file:///C:/NSquareHomepage/sso_deep_specification.md) (state, PKCE, XSS/CSRF 방어 메커니즘 상세)
+> - [AuthServer README.md](file:///C:/NSquareHomepage/AuthServer/README.md) (.NET 10 + OpenIddict 6 / MariaDB)
+> - [OIDC 도입 보고서.md](file:///C:/NSquareHomepage/docs/OIDC-%EB%8F%84%EC%9E%85-%EB%B3%B4%EA%B3%A0%EC%84%9C.md)
+> - [SSO 보안 심층 명세서 (sso_deep_specification.md)](file:///C:/NSquareHomepage/docs/sso_deep_specification.md) (state, PKCE, XSS/CSRF 방어 메커니즘 상세)
 
 ---
 
