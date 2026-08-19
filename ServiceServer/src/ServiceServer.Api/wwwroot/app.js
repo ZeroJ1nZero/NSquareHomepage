@@ -126,8 +126,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="user-badge-wrap">
           <span class="user-role-badge">${currentUser.role}</span>
           <span class="user-name-label">${currentUser.userName}</span>
+          <button id="btnLogout" class="btn btn-secondary btn-sm" style="margin-left: 8px;">
+            로그아웃
+          </button>
         </div>
       `;
+      document.getElementById('btnLogout').addEventListener('click', handleLogout);
 
       sessionIndicator.className = 'status-indicator admin';
       sessionRoleText.textContent = `관리자 (${currentUser.role}) [트랙 B]`;
@@ -177,6 +181,22 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       log('SSO', `로그인 통신 오류: ${err.message}`, 'error');
+    }
+  }
+
+  async function handleLogout() {
+    log('AUTH', '서비스 세션 로그아웃 요청 전송 (POST /api/auth/logout)');
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        log('AUTH', '서비스 세션 쿠키(.NsqHomepage.ServiceSession)가 파기되었습니다.', 'success');
+        showToast('성공적으로 로그아웃되었습니다.', 'info');
+        await checkAuthStatus();
+      } else {
+        log('AUTH', '로그아웃 실패', 'error');
+      }
+    } catch (err) {
+      log('AUTH', `로그아웃 통신 오류: ${err.message}`, 'error');
     }
   }
 

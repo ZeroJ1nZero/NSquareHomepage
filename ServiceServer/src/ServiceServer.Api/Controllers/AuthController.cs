@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
@@ -243,6 +243,26 @@ public class AuthController : ControllerBase
             userName = User.Identity?.Name,
             role = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value,
             claims = claims
+        });
+    }
+
+    /// <summary>
+    /// [세션 종료] 서비스 세션 파기 로그아웃 (Pipeline 외 보조 기능)
+    /// </summary>
+    /// <remarks>
+    /// 발급받은 서비스 세션 쿠키(`.NsqHomepage.ServiceSession`)를 파기하고 세션 메모리를 정리합니다.
+    /// </remarks>
+    [HttpPost("api/auth/logout")]
+    [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
+    public async Task<IActionResult> Logout()
+    {
+        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        _oidcStateService.ClearSession(HttpContext);
+
+        return Ok(new
+        {
+            success = true,
+            message = "서비스 세션 쿠키(.NsqHomepage.ServiceSession)가 성공적으로 파기되었습니다."
         });
     }
 
