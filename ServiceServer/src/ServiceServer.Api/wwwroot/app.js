@@ -164,87 +164,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Login Modal DOM
-  const loginModal = document.getElementById('loginModal');
-  const btnCloseLoginModal = document.getElementById('btnCloseLoginModal');
-  const loginForm = document.getElementById('loginForm');
-  const loginEmail = document.getElementById('loginEmail');
-  const loginPassword = document.getElementById('loginPassword');
-  const loginErrorMsg = document.getElementById('loginErrorMsg');
-  const btnSsoRedirect = document.getElementById('btnSsoRedirect');
-
-  function openLoginModal() {
-    loginErrorMsg.style.display = 'none';
-    loginErrorMsg.textContent = '';
-    loginModal.style.display = 'flex';
-  }
-
-  function closeLoginModal() {
-    loginModal.style.display = 'none';
-  }
-
-  btnCloseLoginModal.addEventListener('click', closeLoginModal);
-  loginModal.addEventListener('click', (e) => {
-    if (e.target === loginModal) closeLoginModal();
-  });
-
-  loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value.trim();
-
-    if (!email || !password) {
-      loginErrorMsg.textContent = '아이디와 비밀번호를 모두 입력해주세요.';
-      loginErrorMsg.style.display = 'block';
-      return;
-    }
-
-    loginErrorMsg.style.display = 'none';
-    log('AUTH', `[계정 검증] 인증 서버(:7213)로 아이디(${email}) 및 비밀번호 검증 요청 전송...`, 'info');
-
-    try {
-      const res = await fetch('/api/tools/direct-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-        credentials: 'include'
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        log('AUTH', `[검증 성공] ${data.message}`, 'success');
-        log('AUTH', `[세션 발급] .NsqHomepage.ServiceSession 발급 완료 (역할: ${data.user.role})`, 'success');
-        showToast(data.message, 'success');
-        closeLoginModal();
-        await checkAuthStatus();
-      } else {
-        const errorMsg = data.message || '아이디 또는 비밀번호가 올바르지 않습니다.';
-        loginErrorMsg.textContent = errorMsg;
-        loginErrorMsg.style.display = 'block';
-        log('AUTH', `[검증 실패] ${errorMsg}`, 'error');
-      }
-    } catch (err) {
-      loginErrorMsg.textContent = `서버 통신 오류: ${err.message}`;
-      loginErrorMsg.style.display = 'block';
-      log('AUTH', `로그인 통신 오류: ${err.message}`, 'error');
-    }
-  });
-
-  btnSsoRedirect.addEventListener('click', handleSsoRedirect);
-
-  function handleLogin() {
-    openLoginModal();
-  }
-
-  async function handleSsoRedirect() {
+  async function handleLogin() {
     log('SSO', '[Step 1~2] OIDC 표준 SSO 로그인 시작 (GET /api/auth/start-sso)');
     try {
       const res = await fetch('/api/auth/start-sso');
       if (res.ok) {
         const data = await res.json();
         log('SSO', `[Step 2] PKCE challenge: ${data.code_challenge.substring(0, 10)}..., state: ${data.state}`, 'info');
-        log('SSO', '[Step 3] 인증 서버 로그인 주소로 이동합니다...', 'info');
+        log('SSO', '[Step 3] 인증 서버 로그인 주소(:7213)로 이동합니다...', 'info');
         window.location.href = data.authorize_url;
       } else {
         log('SSO', '로그인 URL 생성 실패', 'error');
