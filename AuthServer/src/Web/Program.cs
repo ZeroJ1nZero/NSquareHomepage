@@ -7,6 +7,7 @@ using Domain.Entities;
 using Infrastructure;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.EntityFrameworkCore;
 using Web;
 using Web.Middleware;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -152,6 +153,46 @@ app.MapPost("/api/register", async (RegisterRequest req, RegisterUserUseCase use
     return result.Succeeded ? Results.Ok() : Results.BadRequest(new { result.Errors });
 });
 
+// 아이디/비밀번호 검증 전용 API 엔드포인트
+app.MapPost("/api/auth/validate", async (
+    ValidateCredentialsRequest req,
+    AppDbContext db,
+    Microsoft.AspNetCore.Identity.IPasswordHasher<User> hasher,
+    Application.Interfaces.ILoginAuditor auditor,
+    HttpContext context,
+    CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
+    {
+        return Results.BadRequest(new { success = false, message = "이메일과 비밀번호를 입력해주세요." });
+    }
+
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Email == req.Email, ct);
+    var succeeded = user is not null &&
+        hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password) is not Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed;
+
+    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    await auditor.RecordAsync(req.Email, ip, succeeded);
+
+    if (!succeeded || user is null)
+    {
+        return Results.Json(new { success = false, message = "아이디 또는 비밀번호가 올바르지 않습니다." }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    return Results.Ok(new
+    {
+        success = true,
+        message = "인증 성공 (아이디 및 비밀번호 일치)",
+        user = new
+        {
+            id = user.Id,
+            email = user.Email,
+            userName = user.UserName,
+            role = user.Role.ToString()
+        }
+    });
+});
+
 // 역할 변경은 관리자만. 쿠키 클레임이 아닌 DB의 현재 역할로 판정 — 강등이 즉시 반영된다.
 // ponytail: cross-site 요청은 쿠키 기본 SameSite=Lax가 차단. 외부 도메인 관리 UI가 생기면 antiforgery 추가.
 app.MapPut("/api/users/{id:long}/role", async (long id, ChangeRoleRequest req, ClaimsPrincipal caller, AppDbContext db, CancellationToken ct) =>
@@ -175,4 +216,6 @@ app.MapPut("/api/users/{id:long}/role", async (long id, ChangeRoleRequest req, C
 app.Run();
 
 internal record RegisterRequest(string Email, string UserName, string Password);
+internal record ValidateCredentialsRequest(string Email, string Password);
 internal record ChangeRoleRequest(UserRole Role);
+

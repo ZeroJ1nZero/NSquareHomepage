@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ServiceServer.Api.DTOs;
 using ServiceServer.Api.Services;
 
 namespace ServiceServer.Api.Controllers;
@@ -67,6 +68,84 @@ public class AuthController : ControllerBase
             state = state,
             authorize_url = authorizeUrl
         });
+    }
+
+    /// <summary>
+    /// [아이디/비밀번호 검증 로그인] 인증 서버(:7213)에서 계정을 검증하고 서비스 세션 쿠키 발급
+    /// </summary>
+    /// <remarks>
+    /// Swagger UI 또는 웹 화면에서 아이디와 비밀번호를 직접 입력받아 인증 서버에서 일치 여부를 검증하고, 검증 성공 시 관리자 서비스 세션 쿠키를 발급합니다.
+    /// </remarks>
+    [HttpPost("api/auth/login")]
+    public async Task<IActionResult> LoginWithCredentials(
+        [FromBody] LoginRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Email) || string.IsNullOrWhiteSpace(dto.Password))
+        {
+            return BadRequest(new LoginResponseDto(false, "이메일과 비밀번호를 입력해주세요.", null));
+        }
+
+        var client = _httpClientFactory.CreateClient("IdpClient");
+        var requestUri = $"{IdpBaseUrl.TrimEnd('/')}/api/auth/validate";
+        
+        var jsonContent = new StringContent(
+            JsonSerializer.Serialize(dto),
+            Encoding.UTF8,
+            "application/json");
+
+        try
+        {
+            var response = await client.PostAsync(requestUri, jsonContent, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("인증 서버 계정 검증 실패: {Email}, 상태코드: {StatusCode}", dto.Email, response.StatusCode);
+                return StatusCode((int)response.StatusCode, new LoginResponseDto(false, "아이디 또는 비밀번호가 올바르지 않습니다.", null));
+            }
+
+            using var doc = JsonDocument.Parse(responseBody);
+            var root = doc.RootElement;
+            var userElem = root.GetProperty("user");
+
+            var userId = userElem.GetProperty("id").GetInt64();
+            var email = userElem.GetProperty("email").GetString() ?? dto.Email;
+            var userName = userElem.GetProperty("userName").GetString() ?? "사용자";
+            var role = userElem.GetProperty("role").GetString() ?? "User";
+
+            // 서비스 세션 쿠키 발급 (.NsqHomepage.ServiceSession)
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, userId.ToString()),
+                new(ClaimTypes.Name, userName),
+                new(ClaimTypes.Email, email),
+                new(ClaimTypes.Role, role),
+                new("sub", userId.ToString())
+            };
+
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+            var principal = new ClaimsPrincipal(identity);
+
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                principal,
+                new AuthenticationProperties
+                {
+                    IsPersistent = true,
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(60)
+                });
+
+            _logger.LogInformation("아이디/비밀번호 검증 성공 및 세션 발급 완료: {Email} (역할: {Role})", email, role);
+
+            var userInfo = new UserInfoDto(userId, email, userName, role);
+            return Ok(new LoginResponseDto(true, $"인증 서버 검증 완료. 환영합니다, {userName}님 ({role})", userInfo));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "인증 서버 통신 중 오류 발생");
+            return StatusCode(500, new LoginResponseDto(false, $"인증 서버 통신 실패: {ex.Message}", null));
+        }
     }
 
     /// <summary>
