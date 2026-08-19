@@ -1,12 +1,16 @@
-# 빌드 산출물 / IDE
+﻿## [AuthServer .gitignore]
 bin/
 obj/
 .vs/
+.idea/
+.vscode/
 *.user
-
-# 요청에 따라 제외: 테스트, 문서
-tests/
-docs/
-*.md
-*.docx
-*.drawio
+*.userosscache
+*.suo
+*.userprefs
+*.db
+*.db-shm
+*.db-wal
+appsettings.Local.json
+appsettings.Production.json
+appsettings.*.local.json

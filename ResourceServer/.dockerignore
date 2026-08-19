@@ -1,0 +1,11 @@
+﻿**/.git
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/TestResults
+*.db
+*.db-shm
+*.db-wal
+Dockerfile
+.dockerignore

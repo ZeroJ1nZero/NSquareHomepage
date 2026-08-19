@@ -1,5 +1,13 @@
+﻿## [ServiceServer .gitignore]
 bin/
 obj/
-*.db
-*.db-shm
-*.db-wal
+.vs/
+.idea/
+.vscode/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+appsettings.Local.json
+appsettings.Production.json
+appsettings.*.local.json
