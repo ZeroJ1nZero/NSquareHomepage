@@ -48,6 +48,19 @@ public class LoginModel(AppDbContext db, IPasswordHasher<User> hasher, ILoginAud
             new ClaimsPrincipal(identity),
             new AuthenticationProperties { IsPersistent = true });
 
-        return LocalRedirect(returnUrl ?? "/");
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            if (Url.IsLocalUrl(returnUrl))
+            {
+                return LocalRedirect(returnUrl);
+            }
+            if (Uri.TryCreate(returnUrl, UriKind.Absolute, out var uri) &&
+                string.Equals(uri.Host, Request.Host.Host, StringComparison.OrdinalIgnoreCase))
+            {
+                return Redirect(returnUrl);
+            }
+        }
+
+        return LocalRedirect("/");
     }
 }

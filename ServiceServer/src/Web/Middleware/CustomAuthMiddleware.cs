@@ -1,4 +1,4 @@
-﻿namespace Api.Middleware;
+namespace Web.Middleware;
 
 public class CustomAuthMiddleware
 {

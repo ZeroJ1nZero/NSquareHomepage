@@ -1,17 +1,14 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Application.DTOs.History;
 using Application.UseCases.History;
 
-namespace Api.Controllers;
+namespace Web.Controllers;
 
 [ApiController]
 [Route("api/Home/history")]
 public class HistoriesController : ControllerBase
 {
-    /// <summary>
-    /// [트랙 A: 공개 조회] 전체 연혁 목록 조회 (인증 불필요)
-    /// </summary>
     [HttpGet]
     [AllowAnonymous]
     public async Task<ActionResult<HistoryContainerDto>> GetHistories(
@@ -23,9 +20,6 @@ public class HistoriesController : ControllerBase
         return Ok(new HistoryContainerDto(historyItems));
     }
 
-    /// <summary>
-    /// [트랙 B: 관리자 처리] 연혁 목록 저장/추가 (JWT Bearer + Admin 권한 필요)
-    /// </summary>
     [HttpPut]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<HistoryContainerDto>> SaveHistories(

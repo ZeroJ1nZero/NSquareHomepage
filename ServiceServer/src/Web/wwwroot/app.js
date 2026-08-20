@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     role: null
   };
 
-  let aboutData = { introduction: '', updatedAt: null };
+  let aboutData = { content: '', updatedAt: null };
   let serviceData = { service: '', updatedAt: null };
   let historyList = [];
 
@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/public/company-about');
       if (res.ok) {
         aboutData = await res.json();
-        aboutContentText.textContent = aboutData.introduction || '(등록된 회사 소개가 없습니다. 관리자로 로그인하여 등록하세요)';
+        aboutContentText.textContent = aboutData.content || aboutData.introduction || '(등록된 회사 소개가 없습니다. 관리자로 로그인하여 등록하세요)';
         aboutUpdatedAt.textContent = formatDate(aboutData.updatedAt);
         log('트랙 A', '회사 소개 데이터 수신 완료 (200 OK)', 'success');
       } else {
@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- About Edit/Save ---
   btnEditAbout.addEventListener('click', () => {
-    inputAbout.value = aboutData.introduction || '';
+    inputAbout.value = aboutData.content || aboutData.introduction || '';
     aboutViewBox.style.display = 'none';
     aboutEditBox.style.display = 'block';
   });
@@ -303,14 +303,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/admin/company-about', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ introduction: newContent }),
+        body: JSON.stringify({ content: newContent }),
         credentials: 'include'
       });
 
       if (res.ok) {
         const data = await res.json();
         aboutData = data;
-        aboutContentText.textContent = data.introduction;
+        aboutContentText.textContent = data.content || data.introduction;
         aboutUpdatedAt.textContent = formatDate(data.updatedAt);
         aboutEditBox.style.display = 'none';
         aboutViewBox.style.display = 'block';

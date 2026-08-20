@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Domain.Entities;
 
@@ -12,7 +12,8 @@ public class CompanyAboutConfiguration : IEntityTypeConfiguration<CompanyAbout>
 
         builder.HasKey(c => c.Id);
 
-        builder.Property(c => c.Introduction)
+        builder.Property(c => c.Content)
+            .HasColumnName("Introduction")
             .HasMaxLength(4000);
 
         builder.Property(c => c.UpdatedAt)

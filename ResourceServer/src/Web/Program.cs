@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Api;
-using Api.Middleware;
+using Web;
+using Web.Middleware;
 using Application;
 using Infrastructure;
 using Infrastructure.Persistence;
@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. DI 서비스 등록 (Clean Architecture 4계층)
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddApiServices(builder.Configuration);
+builder.Services.AddWebServices(builder.Configuration);
 
 var app = builder.Build();
 
@@ -22,7 +22,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // 2. HTTP 요청 파이프라인 & 미들웨어 설정
-app.UseCustomApiMiddlewares();
+app.UseCustomWebMiddlewares();
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
@@ -32,8 +32,9 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowAll");
-app.UseAuthentication(); // JWT Bearer 토큰 검증
-app.UseAuthorization();
+app.UseAuthentication();        // 1단계: JWT Bearer Access Token 서명 및 수명 검증
+app.UseCustomAuthentication();  // 2단계: Zero-Trust 관리자 권한(Role == Admin) 이중 검증 미들웨어
+app.UseAuthorization();         // ASP.NET Core 역할 기반 인가 [Authorize(Roles = "Admin")]
 
 app.MapControllers();
 

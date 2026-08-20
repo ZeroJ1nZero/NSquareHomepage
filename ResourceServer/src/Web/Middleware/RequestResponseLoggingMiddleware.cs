@@ -1,6 +1,6 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 
-namespace Api.Middleware;
+namespace Web.Middleware;
 
 public class RequestResponseLoggingMiddleware
 {

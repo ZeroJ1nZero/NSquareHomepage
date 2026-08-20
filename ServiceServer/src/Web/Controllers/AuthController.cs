@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Application.Interfaces;
 using Application.DTOs;
 
-namespace Api.Controllers;
+namespace Web.Controllers;
 
 /// <summary>
 /// sso_pipeline_specification.md 규격에 맞춘 OIDC Authorization Code Flow + PKCE SSO 컨트롤러 (BFF 패턴)
@@ -35,18 +35,9 @@ public class AuthController : ControllerBase
 
     private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
 
-    /// <summary>
-    /// [Step 1~2] SSO 로그인 시작 (PKCE &amp; CSRF 키 생성 및 IdP 인가 주소 발급)
-    /// </summary>
-    /// <remarks>
-    /// **[시퀀스 흐름]**<br />
-    /// 1. **Step 1**: 사용자가 로그인을 시작합니다.<br />
-    /// 2. **Step 2**: 서비스 서버가 code_verifier(원본키), code_challenge(해시키), state(CSRF키)를 생성하고 세션에 보관한 뒤 authorize_url을 발급합니다.<br />
-    /// 3. **Step 3**: 클라이언트는 반환된 authorize_url로 이동하여 인증 서버(:7213) 로그인을 진행합니다.
-    /// </remarks>
     [HttpGet("api/auth/start-sso")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
-    public IActionResult Login([FromQuery] string? redirectUri = null)
+    public IActionResult Login()
     {
         var (verifier, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(HttpContext);
 
@@ -67,17 +58,6 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [Step 8~12] OIDC 브라우저 콜백 수신 (CSRF 검증, 백채널 토큰 교환 &amp; 세션 쿠키 발급)
-    /// </summary>
-    /// <remarks>
-    /// **[시퀀스 흐름]**<br />
-    /// 1. **Step 8**: 인증서버에서 1회용 인가 코드(code)를 발급하여 브라우저를 /api/auth/oidc-callback 으로 리다이렉트합니다.<br />
-    /// 2. **Step 9**: 브라우저가 전달받은 code와 state를 서비스 서버에 제출합니다.<br />
-    /// 3. **Step 10**: 서비스 서버가 state 일치 여부를 대조(CSRF 방어)하고, 세션의 code_verifier와 함께 인증 서버로 백채널 토큰 교환을 요청합니다.<br />
-    /// 4. **Step 11**: 인증 서버가 PKCE 검증 후 Access/Refresh 토큰을 발급합니다.<br />
-    /// 5. **Step 12**: 서비스 서버가 토큰을 내부 세션에 은폐 보관하고 브라우저에 .NsqHomepage.ServiceSession 쿠키를 발급합니다.
-    /// </remarks>
     [HttpGet("api/auth/oidc-callback")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     public async Task<IActionResult> SigninOidcGet(
@@ -176,11 +156,8 @@ public class AuthController : ControllerBase
     /// <summary>
     /// [테스트] Swagger/Postman용 인가 코드 + verifier 수동 토큰 교환 (Pipeline 외 보조 기능)
     /// </summary>
-    /// <remarks>
-    /// Swagger UI에서 인가 코드(`code`)와 `code_verifier`를 직접 입력하여 백채널 토큰 교환 및 세션 쿠키를 발급받을 수 있습니다.
-    /// </remarks>
     [HttpPost("api/tools/manual-token-exchange")]
-    [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
+    [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<IActionResult> SigninOidcPost([FromBody] TokenExchangeRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Code))
@@ -224,12 +201,6 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [Step 12] 현재 세션 사용자 식별 및 Role 확인
-    /// </summary>
-    /// <remarks>
-    /// 발급받은 `.NsqHomepage.ServiceSession` 쿠키를 기반으로 현재 사용자의 Claims(NameIdentifier, Role, Email 등)를 확인합니다.
-    /// </remarks>
     [HttpGet("api/auth/user-identity")]
     [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
@@ -247,13 +218,49 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Refresh Token을 이용하여 Access Token 재발급 및 세션 갱신
+    /// </summary>
+    [HttpPost("api/auth/refresh")]
+    [Tags("1. [파이프라인 1] SSO 로그인 & 토큰 발급 (Step 1 ~ Step 12)")]
+    [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
+    public async Task<IActionResult> RefreshToken(CancellationToken cancellationToken)
+    {
+        var refreshToken = await HttpContext.GetTokenAsync("refresh_token");
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            _logger.LogWarning("세션 내에 Refresh Token이 존재하지 않습니다.");
+            return BadRequest(new { message = "세션 내에 유효한 Refresh Token이 존재하지 않습니다. 다시 로그인해 주세요." });
+        }
+
+        var result = await _tokenExchangeService.RefreshTokensAsync(refreshToken, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            _logger.LogError("Refresh Token으로 Access Token 갱신 실패: {Content}", result.ResponseContent);
+            return StatusCode(400, JsonSerializer.Deserialize<object>(result.ResponseContent));
+        }
+
+        // 새 토큰들로 세션 쿠키 업데이트
+        await IssueServiceSessionCookieAsync(result);
+
+        return Ok(new
+        {
+            success = true,
+            message = "Access Token이 Refresh Token으로부터 성공적으로 갱신되었습니다.",
+            expires_in = result.RootElement.TryGetProperty("expires_in", out var exp) ? exp.GetInt32() : 900,
+            user = new
+            {
+                sub = result.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value ?? User.FindFirstValue(ClaimTypes.NameIdentifier),
+                name = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value ?? User.Identity?.Name,
+                role = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value ?? User.FindFirstValue(ClaimTypes.Role)
+            }
+        });
+    }
+
+    /// <summary>
     /// [세션 종료] 서비스 세션 파기 로그아웃 (Pipeline 외 보조 기능)
     /// </summary>
-    /// <remarks>
-    /// 발급받은 서비스 세션 쿠키(`.NsqHomepage.ServiceSession`)를 파기하고 세션 메모리를 정리합니다.
-    /// </remarks>
     [HttpPost("api/auth/logout")]
-    [Tags("4. [기타 / 보조 기능] 세션 관리 및 개발/테스트 도구 (Pipeline 외)")]
+    [ApiExplorerSettings(IgnoreApi = true)]
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -272,19 +279,19 @@ public class AuthController : ControllerBase
 
         if (!claims.Any(c => c.Type == ClaimTypes.NameIdentifier))
         {
-            var sub = claims.FirstOrDefault(c => c.Type == "sub")?.Value ?? "1";
+            var sub = claims.FirstOrDefault(c => c.Type == "sub")?.Value ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "1";
             claims.Add(new Claim(ClaimTypes.NameIdentifier, sub));
         }
 
         if (!claims.Any(c => c.Type == ClaimTypes.Name))
         {
-            var name = claims.FirstOrDefault(c => c.Type == "name")?.Value ?? "User";
+            var name = claims.FirstOrDefault(c => c.Type == "name")?.Value ?? User.Identity?.Name ?? "User";
             claims.Add(new Claim(ClaimTypes.Name, name));
         }
 
         if (!claims.Any(c => c.Type == ClaimTypes.Role))
         {
-            var role = claims.FirstOrDefault(c => c.Type == "role")?.Value ?? "User";
+            var role = claims.FirstOrDefault(c => c.Type == "role")?.Value ?? User.FindFirstValue(ClaimTypes.Role) ?? "User";
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
@@ -293,6 +300,11 @@ public class AuthController : ControllerBase
 
         var accessToken = result.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() : null;
         var refreshToken = result.RootElement.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null;
+
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            refreshToken = await HttpContext.GetTokenAsync("refresh_token");
+        }
 
         var authProperties = new AuthenticationProperties();
         if (!string.IsNullOrWhiteSpace(accessToken))

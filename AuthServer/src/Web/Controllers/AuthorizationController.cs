@@ -135,6 +135,7 @@ public class AuthorizationController(
 
         // AuthServer SSO 세션 쿠키 명시적 파기
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        Response.Cookies.Delete("AuthServer_SSO_Cookie");
         Response.Cookies.Delete(".AspNetCore.Cookies");
 
         return SignOut(
@@ -145,7 +146,7 @@ public class AuthorizationController(
     private static IEnumerable<string> GetDestinations(Claim claim) => claim.Type switch
     {
         // name/email/role은 id_token에도 포함 (클라이언트가 사용자 표시·화면 분기에 사용)
-        Claims.Name or Claims.Email or Claims.Role => [Destinations.AccessToken, Destinations.IdentityToken],
+        Claims.Name or Claims.Email or Claims.Role or ClaimTypes.Name or ClaimTypes.Email or ClaimTypes.Role => [Destinations.AccessToken, Destinations.IdentityToken],
         _ => [Destinations.AccessToken],
     };
 }

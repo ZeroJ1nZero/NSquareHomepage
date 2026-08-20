@@ -16,7 +16,7 @@ ServiceServer/
     ├── Domain/            # [1. Domain] PKCE 상태, 세션 사용자 정보, 데이터 모델
     ├── Application/       # [2. Application] 트랙 A/B 유스케이스, OIDC 토큰/상태 인터페이스, DTOs
     ├── Infrastructure/    # [3. Infrastructure] ResourceServer HTTP 클라이언트, OIDC 백채널 통신
-    └── Api/               # [4. Presentation] Auth/About/Service/History 컨트롤러, wwwroot UI, Swagger UI
+    └── Web/               # [4. Presentation] Auth/About/Service/History 컨트롤러, wwwroot UI, Swagger UI
 ```
 
 ---
@@ -58,7 +58,7 @@ dotnet build ServiceServer.slnx
 
 ### 2. 서버 실행
 ```powershell
-dotnet run --project src/Api --launch-profile https
+dotnet run --project src/Web --launch-profile https
 # 홈페이지 접속: https://localhost:7001
 # Swagger UI: https://localhost:7001/swagger
 ```

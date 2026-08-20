@@ -1,4 +1,4 @@
-﻿namespace Api.Middleware;
+namespace Web.Middleware;
 
 public static class MiddlewareExtensions
 {
@@ -17,11 +17,10 @@ public static class MiddlewareExtensions
         return app.UseMiddleware<CustomAuthMiddleware>();
     }
 
-    public static IApplicationBuilder UseCustomApiMiddlewares(this IApplicationBuilder app)
+    public static IApplicationBuilder UseCustomWebMiddlewares(this IApplicationBuilder app)
     {
         app.UseCustomExceptionHandling();
         app.UseRequestResponseLogging();
-        app.UseCustomAuthentication();
 
         return app;
     }

@@ -1,4 +1,4 @@
-﻿using System.IdentityModel.Tokens.Jwt;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -65,6 +65,56 @@ public class OidcTokenExchangeService : IOidcTokenExchangeService
             if (handler.CanReadToken(idTokenProp.GetString()))
             {
                 var jwt = handler.ReadJwtToken(idTokenProp.GetString());
+                claims.AddRange(jwt.Claims);
+            }
+        }
+
+        return new TokenExchangeResultDto(true, responseContent, claims, root);
+    }
+
+    public async Task<TokenExchangeResultDto> RefreshTokensAsync(
+        string refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        var tokenEndpoint = $"{IdpBaseUrl.TrimEnd('/')}/connect/token";
+        var client = _httpClientFactory.CreateClient("IdpClient");
+
+        var tokenParams = new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["client_id"] = ClientId,
+            ["refresh_token"] = refreshToken
+        };
+
+        _logger.LogInformation("인증 서버(:7213/connect/token)로 Back-channel Refresh Token 갱신 요청 전송 (Grant: refresh_token)");
+        using var response = await client.PostAsync(tokenEndpoint, new FormUrlEncodedContent(tokenParams), cancellationToken);
+        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("토큰 갱신 실패: HTTP {StatusCode}, 응답: {Response}", response.StatusCode, responseContent);
+            return new TokenExchangeResultDto(false, responseContent, new List<Claim>(), default);
+        }
+
+        using var jsonDoc = JsonDocument.Parse(responseContent);
+        var root = jsonDoc.RootElement.Clone();
+
+        var claims = new List<Claim>();
+        if (root.TryGetProperty("id_token", out var idTokenProp) && !string.IsNullOrWhiteSpace(idTokenProp.GetString()))
+        {
+            var handler = new JwtSecurityTokenHandler();
+            if (handler.CanReadToken(idTokenProp.GetString()))
+            {
+                var jwt = handler.ReadJwtToken(idTokenProp.GetString());
+                claims.AddRange(jwt.Claims);
+            }
+        }
+        else if (root.TryGetProperty("access_token", out var accessTokenProp) && !string.IsNullOrWhiteSpace(accessTokenProp.GetString()))
+        {
+            var handler = new JwtSecurityTokenHandler();
+            if (handler.CanReadToken(accessTokenProp.GetString()))
+            {
+                var jwt = handler.ReadJwtToken(accessTokenProp.GetString());
                 claims.AddRange(jwt.Claims);
             }
         }

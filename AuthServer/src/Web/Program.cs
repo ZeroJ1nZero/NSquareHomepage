@@ -54,7 +54,7 @@ builder.Services.AddOpenIddict()
                .SetUserInfoEndpointUris("connect/userinfo")
                .SetEndSessionEndpointUris("connect/logout");
 
-        options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.OfflineAccess);
+        options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.OfflineAccess, Scopes.Roles);
 
         options.AllowAuthorizationCodeFlow()
                .RequireProofKeyForCodeExchange() // PKCE 강제
@@ -71,11 +71,11 @@ builder.Services.AddOpenIddict()
             options.AddEncryptionCertificate(encryptionCert);
         else
             options.AddDevelopmentEncryptionCertificate();
-        if (signingCert != null)
+        if (signingCert != null)
             options.AddSigningCertificate(signingCert);
         else
             options.AddDevelopmentSigningCertificate();
-        options.UseAspNetCore()
+        options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough()
                .EnableUserInfoEndpointPassthrough()
@@ -92,9 +92,18 @@ builder.Services.AddOpenIddict()
         options.UseAspNetCore();
     });
 
-// ASP.NET Identity 대신 순수 쿠키 인증 — 로그인 검증은 Login 페이지가 직접 수행
+// ASP.NET Identity 대신 순수 쿠키 인증 — sso_pipeline_specification.md 규격: AuthServer_SSO_Cookie (14일 수명, SlidingExpiration)
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options => options.LoginPath = "/login");
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "AuthServer_SSO_Cookie";
+        options.LoginPath = "/login";
+        options.ExpireTimeSpan = TimeSpan.FromDays(14);
+        options.SlidingExpiration = true;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    });
 
 // ── 기본 보안: IP당 분당 60회 요청 제한 ──────────────────────
 builder.Services.AddRateLimiter(options =>
@@ -119,10 +128,40 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .AllowAnyMethod()
     .AllowCredentials()));
 
+builder.Services.Configure<RouteOptions>(options =>
+{
+    options.LowercaseUrls = true;
+});
+
 builder.Services.AddRazorPages();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+});
+
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "AuthServer API",
+        Version = "v1",
+        Description = "N-SQUARE 통합 인증 및 사용자 관리 API (OIDC SSO & User Management)"
+    });
+
+    var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
+    if (File.Exists(xmlPath))
+    {
+        options.IncludeXmlComments(xmlPath);
+    }
+});
 builder.Services.AddHostedService<SeedData>();
 
 var app = builder.Build();
@@ -130,7 +169,11 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "AuthServer API v1");
+        options.RoutePrefix = "swagger";
+    });
 }
 else
 {
@@ -147,35 +190,29 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapRazorPages();
 
-app.MapPost("/api/register", async (RegisterRequest req, RegisterUserUseCase useCase, CancellationToken ct) =>
+// 하위 호환성을 위한 /api/register 매핑 (Swagger UI에는 /api/users/register로 통일 노출)
+app.MapPost("/api/register", async (Web.Controllers.RegisterUserRequest req, RegisterUserUseCase useCase, CancellationToken ct) =>
 {
-    var result = await useCase.ExecuteAsync(req.Email, req.UserName, req.Password, ct);
-    return result.Succeeded ? Results.Ok() : Results.BadRequest(new { result.Errors });
-});
-
-// 역할 변경은 관리자만. 쿠키 클레임이 아닌 DB의 현재 역할로 판정 — 강등이 즉시 반영된다.
-// ponytail: cross-site 요청은 쿠키 기본 SameSite=Lax가 차단. 외부 도메인 관리 UI가 생기면 antiforgery 추가.
-app.MapPut("/api/users/{id:long}/role", async (long id, ChangeRoleRequest req, ClaimsPrincipal caller, AppDbContext db, CancellationToken ct) =>
-{
-    if (!Enum.IsDefined(req.Role))
-        return Results.BadRequest(new { Errors = new[] { "올바르지 않은 역할입니다." } });
-
-    if (!long.TryParse(caller.FindFirstValue(ClaimTypes.NameIdentifier), out var callerId) ||
-        (await db.Users.FindAsync([callerId], ct))?.Role != UserRole.Admin)
-        return Results.Forbid();
-
-    var user = await db.Users.FindAsync([id], ct);
-    if (user is null)
-        return Results.NotFound();
-
-    user.Role = req.Role;
-    await db.SaveChangesAsync(ct);
-    return Results.Ok();
-}).RequireAuthorization();
+    var result = await useCase.ExecuteAsync(req.Email, req.UserName, req.Password, req.Role, ct);
+    return result.Succeeded
+        ? Results.Ok(new Web.Controllers.UserResponseDto
+        {
+            Success = true,
+            Message = "사용자가 성공적으로 등록되었습니다.",
+            UserId = result.UserId,
+            Email = req.Email.Trim(),
+            UserName = req.UserName.Trim(),
+            Role = req.Role,
+            RoleName = req.Role.ToString()
+        })
+        : Results.BadRequest(new Web.Controllers.ErrorResponseDto
+        {
+            Success = false,
+            Message = "사용자 등록에 실패했습니다.",
+            Errors = result.Errors
+        });
+}).ExcludeFromDescription();
 
 app.Run();
-
-internal record RegisterRequest(string Email, string UserName, string Password);
-internal record ChangeRoleRequest(UserRole Role);
 
 

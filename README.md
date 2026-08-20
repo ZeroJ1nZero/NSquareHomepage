@@ -28,7 +28,7 @@ NSquareHomepage/
 │   ├── Dockerfile
 │   ├── .gitignore
 │   ├── README.md
-│   └── src/ (Domain, Application, Infrastructure, Api, wwwroot)
+│   └── src/ (Domain, Application, Infrastructure, Web, wwwroot)
 │
 ├── docker-compose.yml       # 3개 독립 서버 + DB 통합 오케스트레이션
 └── docs/                    # 아키텍처 및 파이프라인 명세서
@@ -51,7 +51,7 @@ dotnet run --project ResourceServer/src/Api --launch-profile https
 # -> https://localhost:7002
 
 # 3. 서비스 서버 실행 (ServiceServer)
-dotnet run --project ServiceServer/src/Api --launch-profile https
+dotnet run --project ServiceServer/src/Web --launch-profile https
 # -> https://localhost:7001
 ```
 

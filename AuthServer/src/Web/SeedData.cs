@@ -56,6 +56,11 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                     Permissions.ResponseTypes.Code,
                     Permissions.Scopes.Email,
                     Permissions.Scopes.Profile,
+                    Permissions.Scopes.Roles,
+                    Permissions.Prefixes.Scope + Scopes.OpenId,
+                    Permissions.Prefixes.Scope + Scopes.Email,
+                    Permissions.Prefixes.Scope + Scopes.Profile,
+                    Permissions.Prefixes.Scope + Scopes.Roles,
                     Permissions.Prefixes.Scope + Scopes.OfflineAccess,
                 },
                 Requirements = { Requirements.Features.ProofKeyForCodeExchange },
@@ -93,6 +98,33 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                 if (!descriptor.PostLogoutRedirectUris.Contains(uri))
                 {
                     descriptor.PostLogoutRedirectUris.Add(uri);
+                    needsUpdate = true;
+                }
+            }
+
+            var requiredPermissions = new[]
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.EndSession,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.ResponseTypes.Code,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Scopes.Roles,
+                Permissions.Prefixes.Scope + Scopes.OpenId,
+                Permissions.Prefixes.Scope + Scopes.Email,
+                Permissions.Prefixes.Scope + Scopes.Profile,
+                Permissions.Prefixes.Scope + Scopes.Roles,
+                Permissions.Prefixes.Scope + Scopes.OfflineAccess,
+            };
+
+            foreach (var perm in requiredPermissions)
+            {
+                if (!descriptor.Permissions.Contains(perm))
+                {
+                    descriptor.Permissions.Add(perm);
                     needsUpdate = true;
                 }
             }

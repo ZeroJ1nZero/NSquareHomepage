@@ -6,12 +6,12 @@ WORKDIR /src
 COPY src/Domain/Domain.csproj src/Domain/
 COPY src/Application/Application.csproj src/Application/
 COPY src/Infrastructure/Infrastructure.csproj src/Infrastructure/
-COPY src/Api/Api.csproj src/Api/
-RUN dotnet restore src/Api/Api.csproj
+COPY src/Web/Web.csproj src/Web/
+RUN dotnet restore src/Web/Web.csproj
 
 # Copy source code, wwwroot and publish
 COPY src/ src/
-RUN dotnet publish src/Api/Api.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish src/Web/Web.csproj -c Release -o /app/publish --no-restore
 
 # Final runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview AS final
@@ -23,4 +23,4 @@ ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 8080
 EXPOSE 7001
 
-ENTRYPOINT ["dotnet", "Api.dll"]
+ENTRYPOINT ["dotnet", "Web.dll"]

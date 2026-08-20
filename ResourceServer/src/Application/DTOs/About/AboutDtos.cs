@@ -1,4 +1,4 @@
-﻿namespace Application.DTOs.About;
+namespace Application.DTOs.About;
 
-public record AboutDto(string Introduction, DateTime UpdatedAt);
-public record UpdateAboutDto(string Introduction);
+public record AboutDto(string Content, DateTime UpdatedAt);
+public record UpdateAboutDto(string Content);

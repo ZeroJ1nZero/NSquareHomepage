@@ -1,13 +1,13 @@
-﻿using System.Text;
+using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
-namespace Api;
+namespace Web;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddApiServices(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddWebServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
         services.AddHttpClient();
@@ -16,9 +16,8 @@ public static class DependencyInjection
         {
             options.SwaggerDoc("v1", new OpenApiInfo
             {
-                Title = "ResourceServer API (Data Resource Server)",
-                Version = "v1",
-                Description = "엔스퀘어 사내 홈페이지 데이터 리소스 API 서버 (CRUD & Zero-Trust JWT 인가)"
+                Title = "ResourceServer API",
+                Version = "v1"
             });
 
             options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -27,8 +26,7 @@ public static class DependencyInjection
                 Type = SecuritySchemeType.Http,
                 Scheme = "bearer",
                 BearerFormat = "JWT",
-                In = ParameterLocation.Header,
-                Description = "발급받은 JWT Bearer 토큰 값만 입력하세요. ('Bearer ' 접두사는 자동으로 추가됩니다)"
+                In = ParameterLocation.Header
             });
 
             options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -45,13 +43,6 @@ public static class DependencyInjection
                     Array.Empty<string>()
                 }
             });
-
-            var xmlFilename = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-            var xmlPath = System.IO.Path.Combine(AppContext.BaseDirectory, xmlFilename);
-            if (System.IO.File.Exists(xmlPath))
-            {
-                options.IncludeXmlComments(xmlPath);
-            }
         });
 
         var authority = configuration["Authentication:Authority"] ?? "https://localhost:7213";
@@ -68,18 +59,33 @@ public static class DependencyInjection
                 options.Audience = audience;
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    ValidateIssuer = false, // 개발 편의 및 다중 호스트(7213/5123) 허용
+                    ValidateIssuerSigningKey = true,
+                    ValidateIssuer = false, // 다중 호스트(7213/5123) 허용
                     ValidateAudience = false,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(5),
+                    ClockSkew = TimeSpan.FromMinutes(1),
                     RoleClaimType = "role",
                     NameClaimType = "name"
                 };
 
                 options.Events = new JwtBearerEvents
                 {
+                    OnMessageReceived = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearerAuth");
+                        if (context.Request.Headers.TryGetValue("Authorization", out var authHeader))
+                        {
+                            var headerStr = authHeader.ToString();
+                            if (headerStr.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                            {
+                                logger.LogInformation("📥 [1단계 토큰 수신] Authorization Bearer 토큰 수신 완료 (길이: {Length})", headerStr.Length);
+                            }
+                        }
+                        return Task.CompletedTask;
+                    },
                     OnTokenValidated = context =>
                     {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearerAuth");
                         if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
                         {
                             var roleClaim = identity.FindFirst("role") ?? identity.FindFirst(System.Security.Claims.ClaimTypes.Role);
@@ -94,7 +100,33 @@ public static class DependencyInjection
                                     identity.AddClaim(new System.Security.Claims.Claim("role", roleClaim.Value));
                                 }
                             }
+
+                            var sub = identity.FindFirst("sub")?.Value ?? identity.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                            var role = roleClaim?.Value ?? "User";
+                            var exp = identity.FindFirst("exp")?.Value;
+                            logger.LogInformation("✅ [Zero-Trust 1단계 검증 완료] Access Token 서명 및 유효성 확인 성공 - Sub: {Sub}, Role: {Role}, Exp: {Exp}", sub, role, exp);
                         }
+                        return Task.CompletedTask;
+                    },
+                    OnAuthenticationFailed = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearerAuth");
+                        logger.LogWarning("❌ [토큰 검증 실패] 사유: {Message}", context.Exception.Message);
+                        return Task.CompletedTask;
+                    },
+                    OnChallenge = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearerAuth");
+                        if (!string.IsNullOrWhiteSpace(context.Error))
+                        {
+                            logger.LogWarning("⚠️ [토큰 챌린지] 401 Unauthorized - 에러: {Error}, 설명: {Desc}", context.Error, context.ErrorDescription);
+                        }
+                        return Task.CompletedTask;
+                    },
+                    OnForbidden = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("JwtBearerAuth");
+                        logger.LogWarning("🚫 [인가 차단] 관리자 권한(Role == Admin) 부족으로 접근 차단 (403 Forbidden)");
                         return Task.CompletedTask;
                     }
                 };

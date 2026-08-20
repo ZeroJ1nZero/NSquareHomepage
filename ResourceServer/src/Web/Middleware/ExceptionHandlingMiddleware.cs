@@ -1,7 +1,7 @@
-﻿using System.Net;
+using System.Net;
 using System.Text.Json;
 
-namespace Api.Middleware;
+namespace Web.Middleware;
 
 public class ExceptionHandlingMiddleware
 {

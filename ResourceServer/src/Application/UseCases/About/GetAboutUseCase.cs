@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.About;
 
@@ -26,6 +26,6 @@ public class GetAboutUseCase : IGetAboutUseCase
             return new AboutDto(string.Empty, DateTime.UtcNow);
         }
 
-        return new AboutDto(about.Introduction, about.UpdatedAt);
+        return new AboutDto(about.Content, about.UpdatedAt);
     }
 }

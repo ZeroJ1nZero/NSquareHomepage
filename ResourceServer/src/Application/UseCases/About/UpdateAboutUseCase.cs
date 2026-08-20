@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.About;
 using Domain.Entities;
@@ -24,16 +24,16 @@ public class UpdateAboutUseCase : IUpdateAboutUseCase
         var about = await _context.CompanyAbouts.FirstOrDefaultAsync(cancellationToken);
         if (about == null)
         {
-            about = new CompanyAbout(dto.Introduction);
+            about = new CompanyAbout(dto.Content);
             _context.CompanyAbouts.Add(about);
         }
         else
         {
-            about.Update(dto.Introduction);
+            about.Update(dto.Content);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new AboutDto(about.Introduction, about.UpdatedAt);
+        return new AboutDto(about.Content, about.UpdatedAt);
     }
 }

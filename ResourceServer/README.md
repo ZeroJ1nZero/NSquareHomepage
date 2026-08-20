@@ -15,8 +15,8 @@ ResourceServer/
 └── src/
     ├── Domain/            # [1. Domain] 순수 엔티티 (CompanyAbout, CompanyService, CompanyHistory)
     ├── Application/       # [2. Application] 비즈니스 유스케이스 (CRUD 9개), DTO, Interfaces
-    ├── Infrastructure/    # [3. Infrastructure] EF Core DbContext, DB 매핑 설정 (SQL Server / SQLite)
-    └── Api/               # [4. Presentation] REST 컨트롤러, JWT Bearer 검증 미들웨어, Swagger UI
+    ├── Infrastructure/    # [3. Infrastructure] EF Core DbContext, DB 매핑 설정 (MariaDB)
+    └── Web/               # [4. Presentation] REST 컨트롤러, JWT Bearer 검증 미들웨어, Swagger UI
 ```
 
 ---
@@ -53,7 +53,7 @@ dotnet build ResourceServer.slnx
 
 ### 2. 서버 실행
 ```powershell
-dotnet run --project src/Api --launch-profile https
+dotnet run --project src/Web --launch-profile https
 # 접속 주소: https://localhost:7002
 # Swagger UI: https://localhost:7002/swagger
 ```
