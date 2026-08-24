@@ -37,7 +37,7 @@
       <div class="auth-widget" id="authWidget">
         <!-- JS가 로그인 상태에 따라 렌더링 -->
         <button id="btnLogin" class="btn btn-primary btn-sm">
-          <span class="icon">🔐</span> SSO 로그인 (관리자)
+          <span class="icon">🔐</span> 로그인 (관리자)
         </button>
       </div>
     </div>
@@ -253,6 +253,45 @@
 
     </div>
   </main>
+
+  <!-- Client-side Login Modal -->
+  <div id="loginModal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">🔐</span>
+          <h3 class="modal-title">엔스퀘어 통합 로그인</h3>
+        </div>
+        <button type="button" id="btnCloseLoginModal" class="btn-modal-close" aria-label="닫기">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">
+          관리자 권한 계정으로 로그인하여 콘텐츠를 직접 관리하세요.
+        </p>
+        <div id="loginErrorMsg" class="form-error" style="display: none;"></div>
+        <form id="loginForm" class="login-form">
+          <div class="form-group">
+            <label for="inputLoginEmail" class="form-label">이메일 (아이디)</label>
+            <input type="email" id="inputLoginEmail" class="form-input" placeholder="test@company.local" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="inputLoginPassword" class="form-label">비밀번호</label>
+            <input type="password" id="inputLoginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+          <div class="modal-helper">
+            <span class="helper-badge">기본 계정</span>
+            <code>test@company.local</code> / <code>Test1234!</code>
+          </div>
+          <div class="form-actions" style="margin-top: 20px;">
+            <button type="button" id="btnCancelLoginModal" class="btn btn-secondary btn-sm">취소</button>
+            <button type="submit" id="btnSubmitLogin" class="btn btn-primary btn-sm">
+              <span class="icon">🚀</span> 로그인
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="toast-container"></div>

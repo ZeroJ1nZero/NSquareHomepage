@@ -11,6 +11,7 @@
     </PackageReference>
     <PackageReference Include="OpenIddict.AspNetCore" Version="6.4.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.4.0" />
   </ItemGroup>
 
   <PropertyGroup>

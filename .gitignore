@@ -1,4 +1,16 @@
 ## ==========================================
+## Node.js & Frontend Exclusions
+## ==========================================
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+Frontend/dist/
+Frontend/.vite/
+
+## ==========================================
 ## .NET / C# Build & Compilation Exclusions
 ## ==========================================
 [Bb]in/

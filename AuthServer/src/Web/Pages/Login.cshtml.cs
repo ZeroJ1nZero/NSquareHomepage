@@ -50,6 +50,10 @@ public class LoginModel(AppDbContext db, IPasswordHasher<User> hasher, ILoginAud
 
         if (!string.IsNullOrWhiteSpace(returnUrl))
         {
+            // prompt=login 매개변수를 제거하여 Authorize 엔드포인트 복귀 시 무한 루프 방지
+            returnUrl = System.Text.RegularExpressions.Regex.Replace(returnUrl, @"([?&])prompt=[^&]*(&|$)", "$1", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                .TrimEnd('?', '&');
+
             if (Url.IsLocalUrl(returnUrl))
             {
                 return LocalRedirect(returnUrl);

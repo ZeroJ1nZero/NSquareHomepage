@@ -58,7 +58,8 @@ builder.Services.AddOpenIddict()
 
         options.AllowAuthorizationCodeFlow()
                .RequireProofKeyForCodeExchange() // PKCE 강제
-               .AllowRefreshTokenFlow();
+               .AllowRefreshTokenFlow()
+               .AllowPasswordFlow();
 
         //엑세스 토큰과 리프레시 토큰의 수명을 설정합니다.
         options.SetAccessTokenLifetime(TimeSpan.FromMinutes(15));

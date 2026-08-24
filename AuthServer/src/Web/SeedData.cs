@@ -17,6 +17,41 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureCreatedAsync(ct);
 
+        // IssuedAuthorizationCodes 테이블 생성 보장 및 Zero-Trust 결합 해시 컬럼 추가
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS `IssuedAuthorizationCodes` (
+                `Id` BIGINT NOT NULL AUTO_INCREMENT,
+                `AuthorizationCode` VARCHAR(512) NOT NULL,
+                `AuthorizationCodeHash` VARCHAR(128) NOT NULL,
+                `CodeChallenge` VARCHAR(256) NOT NULL,
+                `CodeChallengeHash` VARCHAR(128) NOT NULL,
+                `CombinedBindingHash` VARCHAR(128) NOT NULL DEFAULT '',
+                `CodeChallengeMethod` VARCHAR(32) NOT NULL,
+                `ClientId` VARCHAR(128) NOT NULL,
+                `RedirectUri` VARCHAR(512) NOT NULL,
+                `Subject` VARCHAR(128) NOT NULL,
+                `UserEmail` VARCHAR(256) NOT NULL,
+                `State` VARCHAR(256) NOT NULL,
+                `Scope` VARCHAR(512) NOT NULL,
+                `CreatedAtUtc` DATETIME(6) NOT NULL,
+                `ExpiresAtUtc` DATETIME(6) NOT NULL,
+                `IsRedeemed` TINYINT(1) NOT NULL DEFAULT 0,
+                `RedeemedAtUtc` DATETIME(6) NULL,
+                PRIMARY KEY (`Id`),
+                INDEX `IX_IssuedAuthorizationCodes_AuthorizationCodeHash` (`AuthorizationCodeHash`),
+                INDEX `IX_IssuedAuthorizationCodes_CombinedBindingHash` (`CombinedBindingHash`),
+                INDEX `IX_IssuedAuthorizationCodes_CreatedAtUtc` (`CreatedAtUtc`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ", ct);
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `IssuedAuthorizationCodes` ADD COLUMN IF NOT EXISTS `CombinedBindingHash` VARCHAR(128) NOT NULL DEFAULT '';
+            ", ct);
+        }
+        catch { /* Column may already exist */ }
+
         // 회사 홈페이지 클라이언트 등록 (AuthServer/README.md 규격)
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var clientId = config["Clients:Homepage:ClientId"] ?? "company-homepage";
@@ -34,6 +69,8 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var allowedPostLogoutRedirectUris = new HashSet<Uri>
         {
             new Uri(config["Clients:Homepage:PostLogoutRedirectUri"] ?? "https://localhost:7001/"),
+            new Uri("http://localhost:3000/"),
+            new Uri("http://localhost:3000"),
             new Uri("http://localhost:5016/signout-callback-oidc"),
             new Uri("http://localhost:5016/"),
             new Uri("http://localhost:5000/")
@@ -53,6 +90,7 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                     Permissions.Endpoints.EndSession,
                     Permissions.GrantTypes.AuthorizationCode,
                     Permissions.GrantTypes.RefreshToken,
+                    Permissions.GrantTypes.Password,
                     Permissions.ResponseTypes.Code,
                     Permissions.Scopes.Email,
                     Permissions.Scopes.Profile,
@@ -109,6 +147,7 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                 Permissions.Endpoints.EndSession,
                 Permissions.GrantTypes.AuthorizationCode,
                 Permissions.GrantTypes.RefreshToken,
+                Permissions.GrantTypes.Password,
                 Permissions.ResponseTypes.Code,
                 Permissions.Scopes.Email,
                 Permissions.Scopes.Profile,

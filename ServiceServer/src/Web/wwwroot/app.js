@@ -52,6 +52,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCancelHistory = document.getElementById('btnCancelHistory');
   const btnSaveHistory = document.getElementById('btnSaveHistory');
 
+  // Login Modal DOM
+  const loginModal = document.getElementById('loginModal');
+  const loginForm = document.getElementById('loginForm');
+  const inputLoginEmail = document.getElementById('inputLoginEmail');
+  const inputLoginPassword = document.getElementById('inputLoginPassword');
+  const loginErrorMsg = document.getElementById('loginErrorMsg');
+  const btnCloseLoginModal = document.getElementById('btnCloseLoginModal');
+  const btnCancelLoginModal = document.getElementById('btnCancelLoginModal');
+
   // =========================================================================
   // 1. Logger & Toast Utilities
   // =========================================================================
@@ -144,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Logged out
       authWidget.innerHTML = `
         <button id="btnLogin" class="btn btn-primary btn-sm">
-          <span class="icon">🔐</span> SSO 로그인 (관리자)
+          <span class="icon">🔐</span> 로그인 (관리자)
         </button>
       `;
       document.getElementById('btnLogin').addEventListener('click', handleLogin);
@@ -164,24 +173,84 @@ document.addEventListener('DOMContentLoaded', () => {
       serviceViewBox.style.display = 'block';
       historyAddBox.style.display = 'none';
     }
+
+    if (historyList && historyList.length > 0) {
+      renderHistoryTimeline(historyList);
+    }
   }
 
-  async function handleLogin() {
-    log('SSO', '[Step 1~2] OIDC 표준 SSO 로그인 시작 (GET /api/auth/start-sso)');
-    try {
-      const res = await fetch('/api/auth/start-sso');
-      if (res.ok) {
-        const data = await res.json();
-        log('SSO', `[Step 2] PKCE challenge: ${data.code_challenge.substring(0, 10)}..., state: ${data.state}`, 'info');
-        log('SSO', '[Step 3] 인증 서버 로그인 주소(:7213)로 이동합니다...', 'info');
-        window.location.href = data.authorize_url;
-      } else {
-        log('SSO', '로그인 URL 생성 실패', 'error');
-        showToast('SSO 로그인 초기화에 실패했습니다.', 'error');
-      }
-    } catch (err) {
-      log('SSO', `로그인 통신 오류: ${err.message}`, 'error');
+  function openLoginModal() {
+    if (loginErrorMsg) {
+      loginErrorMsg.style.display = 'none';
+      loginErrorMsg.textContent = '';
     }
+    if (inputLoginEmail) inputLoginEmail.value = 'test@company.local';
+    if (inputLoginPassword) inputLoginPassword.value = 'Test1234!';
+    if (loginModal) loginModal.style.display = 'flex';
+    if (inputLoginEmail) inputLoginEmail.focus();
+  }
+
+  function closeLoginModal() {
+    if (loginModal) loginModal.style.display = 'none';
+  }
+
+  function handleLogin() {
+    log('AUTH', '[클라이언트] 로그인 팝업을 표시합니다.');
+    openLoginModal();
+  }
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = inputLoginEmail.value.trim();
+      const password = inputLoginPassword.value;
+
+      if (!email || !password) {
+        loginErrorMsg.textContent = '이메일과 비밀번호를 모두 입력해 주세요.';
+        loginErrorMsg.style.display = 'block';
+        return;
+      }
+
+      loginErrorMsg.style.display = 'none';
+      log('AUTH', `[클라이언트] 로그인 요청 전송: ${email} (POST /api/auth/login)`);
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+          credentials: 'include'
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          log('AUTH', `[서비스 서버] 인증 서버(IdP) 자격증명 검증 완료 & 클라이언트 서비스 세션 발급 성공! (${data.user.userName}님)`, 'success');
+          showToast('성공적으로 로그인되었습니다.', 'success');
+          closeLoginModal();
+          await checkAuthStatus();
+          await loadAllData();
+        } else {
+          const errorText = data.message || '로그인에 실패했습니다. 아이디 또는 비밀번호를 확인해 주세요.';
+          loginErrorMsg.textContent = errorText;
+          loginErrorMsg.style.display = 'block';
+          log('AUTH', `로그인 실패: ${errorText}`, 'error');
+          showToast(errorText, 'error');
+        }
+      } catch (err) {
+        loginErrorMsg.textContent = `통신 오류: ${err.message}`;
+        loginErrorMsg.style.display = 'block';
+        log('AUTH', `로그인 통신 오류: ${err.message}`, 'error');
+      }
+    });
+  }
+
+  if (btnCloseLoginModal) btnCloseLoginModal.addEventListener('click', closeLoginModal);
+  if (btnCancelLoginModal) btnCancelLoginModal.addEventListener('click', closeLoginModal);
+  if (loginModal) {
+    loginModal.addEventListener('click', (e) => {
+      if (e.target === loginModal) {
+        closeLoginModal();
+      }
+    });
   }
 
   async function handleLogout() {
@@ -189,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
       if (res.ok) {
-        log('AUTH', '서비스 세션 쿠키(.NsqHomepage.ServiceSession)가 파기되었습니다.', 'success');
+        log('AUTH', '서비스 세션이 파기되었습니다.', 'success');
         showToast('성공적으로 로그아웃되었습니다.', 'info');
         await checkAuthStatus();
       } else {
@@ -263,12 +332,58 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const isAdmin = currentUser && currentUser.isAuthenticated && currentUser.role === 'Admin';
+
     historyTimeline.innerHTML = list.map(item => `
-      <div class="timeline-item">
-        <div class="timeline-date">${item.data || item.date || '-'}</div>
+      <div class="timeline-item" style="position: relative;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="timeline-date">${item.data || item.date || '-'}</div>
+          ${isAdmin && item.id ? `
+            <button class="btn-delete-history btn btn-danger btn-sm" data-id="${item.id}" style="padding: 3px 8px; font-size: 12px; border-radius: 4px; background: #ef4444; color: white; border: none; cursor: pointer;">
+              🗑️ 삭제
+            </button>
+          ` : ''}
+        </div>
         <div class="timeline-content">${item.content || ''}</div>
       </div>
     `).join('');
+
+    if (isAdmin) {
+      document.querySelectorAll('.btn-delete-history').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const historyId = e.currentTarget.getAttribute('data-id');
+          if (!historyId) return;
+
+          if (!confirm(`이 연혁 항목(ID: ${historyId})을 삭제하시겠습니까?`)) {
+            return;
+          }
+
+          log('트랙 B', `[Step 1] 연혁 항목 삭제 요청 (DELETE /api/admin/company-histories/${historyId})`);
+          try {
+            const res = await fetch(`/api/admin/company-histories/${historyId}`, {
+              method: 'DELETE',
+              credentials: 'include'
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              log('트랙 B', `[Step 2] 연혁 삭제 완료! ResourceServer DB 반영 (200 OK)`, 'success');
+              showToast(data.message || '연혁이 삭제되었습니다.', 'success');
+              await loadHistory();
+            } else if (res.status === 401 || res.status === 302) {
+              log('트랙 B', '관리자 인증이 필요합니다.', 'warn');
+              showToast('관리자 권한이 필요합니다.', 'error');
+              handleLogin();
+            } else {
+              log('트랙 B', `연혁 삭제 실패 (HTTP ${res.status})`, 'error');
+              showToast('연혁 삭제에 실패했습니다.', 'error');
+            }
+          } catch (err) {
+            log('트랙 B', `연혁 삭제 통신 오류: ${err.message}`, 'error');
+          }
+        });
+      });
+    }
   }
 
   async function loadAllData() {

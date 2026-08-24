@@ -56,6 +56,8 @@ public static class DependencyInjection
             options.Cookie.HttpOnly = true;
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
             options.Cookie.SameSite = SameSiteMode.Lax;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
+            options.SlidingExpiration = true;
             options.Events.OnRedirectToLogin = context =>
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -71,7 +73,10 @@ public static class DependencyInjection
         services.AddCors(options =>
         {
             options.AddPolicy("AllowAll", builder =>
-                builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+                builder.SetIsOriginAllowed(_ => true)
+                       .AllowAnyMethod()
+                       .AllowAnyHeader()
+                       .AllowCredentials());
         });
 
         return services;

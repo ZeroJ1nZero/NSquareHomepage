@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Application.DTOs;
 
 namespace Application.UseCases.Admin;
@@ -40,4 +40,17 @@ public class SaveCompanyHistoriesUseCase : ISaveCompanyHistoriesUseCase
     public SaveCompanyHistoriesUseCase(IResourceApiClient client) => _client = client;
     public Task<HistoryContainerDto?> ExecuteAsync(SaveHistoryRequestDto dto, string? accessToken, CancellationToken cancellationToken = default)
         => _client.SaveHistoriesAsync(dto, accessToken, cancellationToken);
+}
+
+public interface IDeleteCompanyHistoryUseCase
+{
+    Task<bool> ExecuteAsync(int id, string? accessToken, CancellationToken cancellationToken = default);
+}
+
+public class DeleteCompanyHistoryUseCase : IDeleteCompanyHistoryUseCase
+{
+    private readonly IResourceApiClient _client;
+    public DeleteCompanyHistoryUseCase(IResourceApiClient client) => _client = client;
+    public Task<bool> ExecuteAsync(int id, string? accessToken, CancellationToken cancellationToken = default)
+        => _client.DeleteHistoryAsync(id, accessToken, cancellationToken);
 }

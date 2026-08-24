@@ -1,9 +1,12 @@
 using System.Security.Claims;
+using Application.Interfaces;
+using Domain.Entities;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -21,7 +24,9 @@ namespace Web.Controllers;
 public class AuthorizationController(
     AppDbContext db,
     IOpenIddictTokenManager tokenManager,
-    IOpenIddictAuthorizationManager authorizationManager) : Controller
+    IOpenIddictAuthorizationManager authorizationManager,
+    IPasswordHasher<User> hasher,
+    ILoginAuditor auditor) : Controller
 {
     [HttpGet("~/connect/authorize"), HttpPost("~/connect/authorize")]
     [IgnoreAntiforgeryToken]
@@ -35,7 +40,7 @@ public class AuthorizationController(
         Domain.Entities.User? user = null;
         if (long.TryParse(result.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
             user = await db.Users.FindAsync(userId);
-        if (user is null) // 쿠키 없음 or 쿠키는 있으나 사용자가 삭제됨 → 로그인 화면으로
+        if (user is null) // SSO 쿠키(AuthServer_SSO_Cookie)가 없는 경우에만 로그인 페이지로 Challenge 이동
         {
             return Challenge(new AuthenticationProperties
             {
@@ -59,6 +64,29 @@ public class AuthorizationController(
         foreach (var claim in principal.Claims)
             claim.SetDestinations(GetDestinations(claim));
 
+        if (!string.IsNullOrEmpty(request.CodeChallenge))
+        {
+            var challengeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.CodeChallenge))).ToLowerInvariant();
+            db.IssuedAuthorizationCodes.Add(new IssuedAuthorizationCode
+            {
+                AuthorizationCode = "oidc_auth_code",
+                AuthorizationCodeHash = challengeHash,
+                CodeChallenge = request.CodeChallenge,
+                CodeChallengeHash = challengeHash,
+                CodeChallengeMethod = request.CodeChallengeMethod ?? "S256",
+                ClientId = request.ClientId ?? "company-homepage",
+                RedirectUri = request.RedirectUri ?? string.Empty,
+                Subject = user.Id.ToString(),
+                UserEmail = user.Email,
+                State = request.State ?? string.Empty,
+                Scope = string.Join(" ", request.GetScopes()),
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
+                IsRedeemed = false
+            });
+            await db.SaveChangesAsync();
+        }
+
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
@@ -68,6 +96,45 @@ public class AuthorizationController(
     {
         var request = HttpContext.GetOpenIddictServerRequest()
             ?? throw new InvalidOperationException("OpenID Connect 요청을 읽을 수 없습니다.");
+
+        if (request.IsPasswordGrantType())
+        {
+            var email = request.Username;
+            var password = request.Password;
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, HttpContext.RequestAborted);
+
+            var succeeded = user is not null &&
+                !string.IsNullOrEmpty(password) &&
+                hasher.VerifyHashedPassword(user, user.PasswordHash, password) is not PasswordVerificationResult.Failed;
+
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            await auditor.RecordAsync(email ?? "unknown", ip, succeeded);
+
+            if (!succeeded || user is null)
+            {
+                return Forbid(
+                    authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
+                    properties: new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "이메일 또는 비밀번호가 일치하지 않습니다.",
+                    }));
+            }
+
+            var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
+            identity.SetClaim(Claims.Subject, user.Id.ToString())
+                    .SetClaim(Claims.Email, user.Email)
+                    .SetClaim(Claims.Name, user.UserName)
+                    .SetClaim(Claims.Role, user.Role.ToString());
+
+            var principal = new ClaimsPrincipal(identity);
+            principal.SetScopes(request.GetScopes());
+
+            foreach (var claim in principal.Claims)
+                claim.SetDestinations(GetDestinations(claim));
+
+            return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        }
 
         if (!request.IsAuthorizationCodeGrantType() && !request.IsRefreshTokenGrantType())
             throw new InvalidOperationException("지원하지 않는 grant type입니다.");
@@ -135,12 +202,25 @@ public class AuthorizationController(
 
         // AuthServer SSO 세션 쿠키 명시적 파기
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        Response.Cookies.Delete("AuthServer_SSO_Cookie", new CookieOptions
+        {
+            Path = "/",
+            Secure = true,
+            SameSite = SameSiteMode.Lax
+        });
         Response.Cookies.Delete("AuthServer_SSO_Cookie");
-        Response.Cookies.Delete(".AspNetCore.Cookies");
 
-        return SignOut(
-            authenticationSchemes: OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
-            properties: new AuthenticationProperties { RedirectUri = "/" });
+        var postLogoutRedirectUri = Request.Query["post_logout_redirect_uri"].ToString();
+        if (string.IsNullOrWhiteSpace(postLogoutRedirectUri) && Request.HasFormContentType)
+        {
+            postLogoutRedirectUri = Request.Form["post_logout_redirect_uri"].ToString();
+        }
+        if (string.IsNullOrWhiteSpace(postLogoutRedirectUri))
+        {
+            postLogoutRedirectUri = "http://localhost:3000/";
+        }
+
+        return Redirect(postLogoutRedirectUri);
     }
 
     private static IEnumerable<string> GetDestinations(Claim claim) => claim.Type switch

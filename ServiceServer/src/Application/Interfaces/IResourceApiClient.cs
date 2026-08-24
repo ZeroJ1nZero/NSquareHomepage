@@ -1,4 +1,4 @@
-﻿using Application.DTOs;
+using Application.DTOs;
 
 namespace Application.Interfaces;
 
@@ -10,4 +10,5 @@ public interface IResourceApiClient
     Task<ServiceDto?> UpdateServiceAsync(UpdateServiceDto dto, string? accessToken, CancellationToken cancellationToken = default);
     Task<HistoryContainerDto?> GetHistoriesAsync(CancellationToken cancellationToken = default);
     Task<HistoryContainerDto?> SaveHistoriesAsync(SaveHistoryRequestDto dto, string? accessToken, CancellationToken cancellationToken = default);
+    Task<bool> DeleteHistoryAsync(int id, string? accessToken, CancellationToken cancellationToken = default);
 }

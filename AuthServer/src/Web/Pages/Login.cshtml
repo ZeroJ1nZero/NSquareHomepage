@@ -5,21 +5,154 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>사내 통합 로그인</title>
+    <title>N-SQUARE 통합 인증 센터 (SSO)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #334155;
+        }
+        .login-card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 440px;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            padding: 40px 36px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #2563eb, #3b82f6);
+            color: white;
+            font-size: 26px;
+            border-radius: 14px;
+            margin-bottom: 16px;
+            box-shadow: 0 8px 16px rgba(37, 99, 235, 0.3);
+        }
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 6px;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #64748b;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #334155;
+            margin-bottom: 8px;
+        }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            padding: 12px 16px;
+            font-size: 15px;
+            border: 1.5px solid #cbd5e1;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+        input[type="text"]:focus, input[type="password"]:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+        }
+        .btn-submit {
+            width: 100%;
+            padding: 13px;
+            font-size: 15px;
+            font-weight: 600;
+            color: white;
+            background: #2563eb;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 10px;
+        }
+        .btn-submit:hover {
+            background: #1d4ed8;
+        }
+        .error-box {
+            background-color: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .hint-box {
+            margin-top: 24px;
+            padding: 14px 16px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.6;
+        }
+        .hint-box strong {
+            color: #0f172a;
+        }
+    </style>
 </head>
 <body>
-    <h1>사내 통합 로그인</h1>
+    <div class="login-card">
+        <div class="header">
+            <div class="logo-badge">🔐</div>
+            <h1>N-SQUARE 통합 로그인</h1>
+            <p class="subtitle">사내 단일 인증 (SSO) 센터</p>
+        </div>
 
-    @if (Model.Error is not null)
-    {
-        <p style="color:red">@Model.Error</p>
-    }
+        @if (Model.Error is not null)
+        {
+            <div class="error-box">
+                <span>⚠️</span>
+                <span>@Model.Error</span>
+            </div>
+        }
 
-    <form method="post">
-        @Html.AntiForgeryToken()
-        <label>아이디 <input type="text" asp-for="Email" required autofocus /></label><br />
-        <label>비밀번호 <input type="password" asp-for="Password" required /></label><br />
-        <button type="submit">로그인</button>
-    </form>
+        <form method="post" asp-route-returnUrl="@Request.Query["ReturnUrl"]">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="returnUrl" value="@Request.Query["ReturnUrl"]" />
+            <div class="form-group">
+                <label for="Email">아이디 (이메일)</label>
+                <input type="text" id="Email" asp-for="Email" placeholder="user@company.local" required autofocus />
+            </div>
+            <div class="form-group">
+                <label for="Password">비밀번호</label>
+                <input type="password" id="Password" asp-for="Password" placeholder="비밀번호 입력" required />
+            </div>
+            <button type="submit" class="btn-submit">로그인 및 인증 진행</button>
+        </form>
+
+        <div class="hint-box">
+            🛡️ <strong>MariaDB 계정 실시간 대조</strong><br />
+            입력하신 아이디와 비밀번호는 AuthServer의 MariaDB(PBKDF2)를 통해 실시간 검증되며, 모든 시도는 감사 로그에 기록됩니다.
+        </div>
+    </div>
 </body>
 </html>

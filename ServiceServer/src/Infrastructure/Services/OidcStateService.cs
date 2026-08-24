@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -43,7 +43,7 @@ public class OidcStateService : IOidcStateService
                 context.Session.SetString("return_url", returnUrl);
             }
 
-            var scope = Uri.EscapeDataString("openid profile email offline_access");
+            var scope = Uri.EscapeDataString("openid profile email roles offline_access");
             var targetRedirectUri = Uri.EscapeDataString(DefaultRedirectUri);
             var authorizeUrl = $"{IdpBaseUrl.TrimEnd('/')}/connect/authorize?client_id={ClientId}&response_type=code&redirect_uri={targetRedirectUri}&scope={scope}&code_challenge={challenge}&code_challenge_method=S256&state={state}";
 

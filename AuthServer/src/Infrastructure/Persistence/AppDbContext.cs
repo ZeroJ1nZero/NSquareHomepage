@@ -8,6 +8,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<LoginAudit> LoginAudits => Set<LoginAudit>();
     public DbSet<BlockedIp> BlockedIps => Set<BlockedIp>();
+    public DbSet<IssuedAuthorizationCode> IssuedAuthorizationCodes => Set<IssuedAuthorizationCode>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -34,6 +35,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.ToTable("BlockedIp");
             e.Property(x => x.IpAddress).HasMaxLength(45);
             e.HasIndex(x => x.IpAddress).IsUnique();
+        });
+
+        builder.Entity<IssuedAuthorizationCode>(e =>
+        {
+            e.ToTable("IssuedAuthorizationCodes");
+            e.Property(x => x.AuthorizationCode).HasMaxLength(512);
+            e.Property(x => x.AuthorizationCodeHash).HasMaxLength(128);
+            e.Property(x => x.CodeChallenge).HasMaxLength(256);
+            e.Property(x => x.CodeChallengeHash).HasMaxLength(128);
+            e.Property(x => x.CombinedBindingHash).HasMaxLength(128);
+            e.Property(x => x.ClientId).HasMaxLength(128);
+            e.Property(x => x.State).HasMaxLength(256);
+            e.HasIndex(x => x.AuthorizationCodeHash);
+            e.HasIndex(x => x.CombinedBindingHash);
+            e.HasIndex(x => x.CreatedAtUtc);
         });
     }
 }

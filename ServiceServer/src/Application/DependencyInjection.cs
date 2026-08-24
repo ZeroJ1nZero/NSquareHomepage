@@ -17,6 +17,12 @@ public static class DependencyInjection
         services.AddScoped<IUpdateCompanyAboutUseCase, UpdateCompanyAboutUseCase>();
         services.AddScoped<IUpdateCompanyServiceUseCase, UpdateCompanyServiceUseCase>();
         services.AddScoped<ISaveCompanyHistoriesUseCase, SaveCompanyHistoriesUseCase>();
+        services.AddScoped<IDeleteCompanyHistoryUseCase, DeleteCompanyHistoryUseCase>();
+
+        // Auth & Pipeline UseCases (SOLID SRP & DIP)
+        services.AddScoped<Application.UseCases.Auth.IInitiateSsoUseCase, Application.UseCases.Auth.InitiateSsoUseCase>();
+        services.AddScoped<Application.UseCases.Auth.IVerifyCsrfStateUseCase, Application.UseCases.Auth.VerifyCsrfStateUseCase>();
+        services.AddScoped<Application.UseCases.Auth.IExchangeTokenUseCase, Application.UseCases.Auth.ExchangeTokenUseCase>();
 
         return services;
     }

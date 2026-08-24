@@ -7,6 +7,7 @@ namespace Web.Controllers;
 
 [ApiController]
 [Route("api/Home/history")]
+[Tags("1. [파이프라인 Step 10] Zero-Trust 리소스 CRUD (JWT Bearer 검증)")]
 public class HistoriesController : ControllerBase
 {
     [HttpGet]
@@ -16,7 +17,7 @@ public class HistoriesController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await useCase.ExecuteAsync(cancellationToken);
-        var historyItems = result.Select(h => new HistoryItemDto(h.Date, h.Content)).ToList();
+        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.Date, h.Content)).ToList();
         return Ok(new HistoryContainerDto(historyItems));
     }
 
@@ -37,7 +38,22 @@ public class HistoriesController : ControllerBase
         }
 
         var result = await getUseCase.ExecuteAsync(cancellationToken);
-        var historyItems = result.Select(h => new HistoryItemDto(h.Date, h.Content)).ToList();
+        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.Date, h.Content)).ToList();
         return Ok(new HistoryContainerDto(historyItems));
+    }
+
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteHistory(
+        int id,
+        [FromServices] IDeleteCompanyHistoryUseCase deleteUseCase,
+        CancellationToken cancellationToken)
+    {
+        var success = await deleteUseCase.ExecuteAsync(id, cancellationToken);
+        if (!success)
+        {
+            return NotFound(new { message = $"ID {id}인 연혁 항목을 찾을 수 없습니다." });
+        }
+        return Ok(new { success = true, message = $"연혁(ID: {id}) 항목이 삭제되었습니다." });
     }
 }

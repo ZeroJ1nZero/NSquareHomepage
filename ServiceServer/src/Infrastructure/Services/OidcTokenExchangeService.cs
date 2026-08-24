@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -51,22 +52,49 @@ public class OidcTokenExchangeService : IOidcTokenExchangeService
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("토큰 교환 실패: HTTP {StatusCode}, 응답: {Response}", response.StatusCode, responseContent);
-            return new TokenExchangeResultDto(false, responseContent, new List<Claim>(), default);
+            _logger.LogWarning("OIDC /connect/token 응답 실패(HTTP {Code}). Back-channel 전용 엔드포인트(/api/auth/token-exchange)로 직통신 재시도합니다.", response.StatusCode);
+            var directEndpoint = $"{IdpBaseUrl.TrimEnd('/')}/api/auth/token-exchange";
+            var directPayload = new
+            {
+                grantType = "authorization_code",
+                clientId = ClientId,
+                code = code,
+                codeVerifier = codeVerifier,
+                redirectUri = redirectUri
+            };
+            using var directResponse = await client.PostAsJsonAsync(directEndpoint, directPayload, cancellationToken);
+            var directContent = await directResponse.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!directResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError("Back-channel 토큰 교환 최종 실패: HTTP {StatusCode}, 응답: {Response}", directResponse.StatusCode, directContent);
+                return new TokenExchangeResultDto(false, directContent, new List<Claim>(), default);
+            }
+
+            responseContent = directContent;
         }
 
         using var jsonDoc = JsonDocument.Parse(responseContent);
         var root = jsonDoc.RootElement.Clone();
 
         var claims = new List<Claim>();
-        if (root.TryGetProperty("id_token", out var idTokenProp) && !string.IsNullOrWhiteSpace(idTokenProp.GetString()))
+        var handler = new JwtSecurityTokenHandler();
+        var idTokenStr = (root.TryGetProperty("id_token", out var itp) ? itp.GetString() : null)
+                         ?? (root.TryGetProperty("idToken", out var itp2) ? itp2.GetString() : null);
+
+        if (!string.IsNullOrWhiteSpace(idTokenStr) && handler.CanReadToken(idTokenStr))
         {
-            var handler = new JwtSecurityTokenHandler();
-            if (handler.CanReadToken(idTokenProp.GetString()))
-            {
-                var jwt = handler.ReadJwtToken(idTokenProp.GetString());
-                claims.AddRange(jwt.Claims);
-            }
+            var jwt = handler.ReadJwtToken(idTokenStr);
+            claims.AddRange(jwt.Claims);
+        }
+
+        var accessTokenStr = (root.TryGetProperty("access_token", out var atp) ? atp.GetString() : null)
+                             ?? (root.TryGetProperty("accessToken", out var atp2) ? atp2.GetString() : null);
+
+        if (claims.Count == 0 && !string.IsNullOrWhiteSpace(accessTokenStr) && handler.CanReadToken(accessTokenStr))
+        {
+            var jwt = handler.ReadJwtToken(accessTokenStr);
+            claims.AddRange(jwt.Claims);
         }
 
         return new TokenExchangeResultDto(true, responseContent, claims, root);

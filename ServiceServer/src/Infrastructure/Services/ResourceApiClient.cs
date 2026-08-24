@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -95,5 +95,19 @@ public class ResourceApiClient : IResourceApiClient
         var response = await _httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<HistoryContainerDto>(JsonOptions, cancellationToken);
+    }
+
+    public async Task<bool> DeleteHistoryAsync(int id, string? accessToken, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("[트랙 B] ResourceServer로 연혁 항목 삭제 요청 (DELETE /api/Home/history/{Id}, Bearer Token 첨부)", id);
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/Home/history/{id}");
+
+        if (!string.IsNullOrWhiteSpace(accessToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        }
+
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        return response.IsSuccessStatusCode;
     }
 }

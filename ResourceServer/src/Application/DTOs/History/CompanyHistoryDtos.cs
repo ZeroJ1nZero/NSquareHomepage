@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace Application.DTOs.History;
 
@@ -9,6 +9,9 @@ public record UpdateCompanyHistoryDto(DateOnly Date, string Content);
 public class HistoryItemDto
 {
     private DateOnly? _data;
+
+    [JsonPropertyName("id")]
+    public int? Id { get; set; }
 
     [JsonPropertyName("data")]
     public DateOnly Data
@@ -31,6 +34,12 @@ public class HistoryItemDto
     public HistoryItemDto() { }
     public HistoryItemDto(DateOnly data, string content)
     {
+        _data = data;
+        Content = content;
+    }
+    public HistoryItemDto(int id, DateOnly data, string content)
+    {
+        Id = id;
         _data = data;
         Content = content;
     }

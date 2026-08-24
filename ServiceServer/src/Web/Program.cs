@@ -22,9 +22,6 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
 app.UseCors("AllowAll");
 app.UseSession();        // 세션 미들웨어 (PKCE verifier, CSRF state 보관)
 app.UseAuthentication(); // 서비스 세션 쿠키 인증
