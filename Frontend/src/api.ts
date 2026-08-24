@@ -1,6 +1,13 @@
 import type { AboutData, CurrentUser, HistoryItem, ServiceData } from './types';
 
-// API base path (uses Vite proxy or direct relative path)
+/**
+ * [Frontend API Client]
+ * N-SQUARE 통합 플랫폼 클라이언트 API 모듈
+ * 
+ * - 트랙 A (공개 조회): /api/public/*
+ * - 트랙 B (관리자 CUD): /api/admin/* (BFF 서비스 세션 쿠키 또는 JWT Bearer 연동)
+ * - SSO 파이프라인: /api/auth/start-sso (Silent SSO & PKCE)
+ */
 const API_BASE = '/api';
 const AUTH_BASE = '/connect';
 
@@ -8,10 +15,16 @@ const TOKEN_KEY = 'nsq_access_token';
 const REFRESH_TOKEN_KEY = 'nsq_refresh_token';
 const USER_KEY = 'nsq_user';
 
+/**
+ * 로컬 스토리지에 보관된 Access Token을 조회합니다.
+ */
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+/**
+ * 로그인 성공 시 발급받은 토큰 세트 및 사용자 정보를 보관합니다.
+ */
 export function setStoredTokens(accessToken: string, refreshToken?: string, user?: CurrentUser) {
   localStorage.setItem(TOKEN_KEY, accessToken);
   if (refreshToken) {
@@ -22,12 +35,18 @@ export function setStoredTokens(accessToken: string, refreshToken?: string, user
   }
 }
 
+/**
+ * 로그아웃 시 로컬 스토리지의 토큰 및 세션 정보를 정리합니다.
+ */
 export function clearStoredTokens() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }
 
+/**
+ * JWT 페이로드를 Base64Url 디코딩하여 클레임 객체를 추출합니다.
+ */
 function parseJwt(token: string): any {
   try {
     const base64Url = token.split('.')[1];
@@ -44,6 +63,9 @@ function parseJwt(token: string): any {
   }
 }
 
+/**
+ * Authorization Bearer 헤더를 생성합니다.
+ */
 function getAuthHeader(): Record<string, string> {
   const token = getStoredToken();
   if (token) {
@@ -53,7 +75,8 @@ function getAuthHeader(): Record<string, string> {
 }
 
 /**
- * 서비스 서버 Step 1 OIDC SSO 시작 (PKCE & CSRF 자동 발급 후 AuthServer 로그인으로 이동)
+ * [Step 1 SSO 시작] OIDC SSO 플로우를 가동하여 인증 서버(IdP)로 이동합니다.
+ * @param returnUrl 인증 완료 후 최종 복귀할 프론트엔드 주소 (기본값: 현재 페이지)
  */
 export function startSso(returnUrl?: string): void {
   const target = returnUrl || (window.location.origin + window.location.pathname);
