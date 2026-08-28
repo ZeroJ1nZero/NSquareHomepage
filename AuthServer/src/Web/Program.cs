@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.IO;
 using Application.UseCases;
 using Domain.Entities;
@@ -8,6 +10,9 @@ using Infrastructure;
 using Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
+using OpenIddict.Server;
+using OpenIddict.Server.AspNetCore;
 using Web;
 using Web.Middleware;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -31,16 +36,18 @@ if (!string.IsNullOrEmpty(encryptionPath) && File.Exists(encryptionPath))
 }
 
 // Kestrel HTTPS 기본 옵션에 발견된 인증서를 할당합니다 (있을 경우). 운영 환경에서 HTTPS를 강제할 때 사용.
-if (signingCert != null)
+builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    builder.WebHost.ConfigureKestrel(serverOptions =>
+    serverOptions.Limits.MaxRequestHeadersTotalSize = 65536; // 64KB
+    serverOptions.Limits.MaxRequestBufferSize = 1048576;     // 1MB
+    if (signingCert != null)
     {
         serverOptions.ConfigureHttpsDefaults(httpsOptions =>
         {
             httpsOptions.ServerCertificate = signingCert;
         });
-    });
-}
+    }
+});
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<RegisterUserUseCase>();
@@ -52,7 +59,7 @@ builder.Services.AddOpenIddict()
         options.SetAuthorizationEndpointUris("connect/authorize")
                .SetTokenEndpointUris("connect/token")
                .SetUserInfoEndpointUris("connect/userinfo")
-               .SetEndSessionEndpointUris("connect/logout");
+               .SetEndSessionEndpointUris("api/auth/logout", "connect/logout");
 
         options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.OfflineAccess, Scopes.Roles);
 
@@ -61,11 +68,13 @@ builder.Services.AddOpenIddict()
                .AllowRefreshTokenFlow()
                .AllowPasswordFlow();
 
-        //엑세스 토큰과 리프레시 토큰의 수명을 설정합니다.
+        // 인가 코드(1분), 엑세스 토큰(15분), 리프레시 토큰(14일)의 수명을 설정합니다.
+        options.SetAuthorizationCodeLifetime(TimeSpan.FromMinutes(1));
         options.SetAccessTokenLifetime(TimeSpan.FromMinutes(15));
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));
 
         options.DisableAccessTokenEncryption();
+        options.DisableTokenStorage();
 
         // 운영용 인증서가 제공되면 이를 사용하고, 없으면 개발용 인증서로 폴백합니다.
         if (encryptionCert != null)
@@ -76,6 +85,12 @@ builder.Services.AddOpenIddict()
             options.AddSigningCertificate(signingCert);
         else
             options.AddDevelopmentSigningCertificate();
+        options.AddEventHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>(builder =>
+            builder.UseScopedHandler<SaveAuthorizationCodeIssuanceLogHandler>());
+
+        options.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(builder =>
+            builder.UseScopedHandler<SaveRefreshTokenLedgerHandler>());
+
         options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
                .EnableTokenEndpointPassthrough()
@@ -102,8 +117,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.ExpireTimeSpan = TimeSpan.FromDays(14);
         options.SlidingExpiration = true;
         options.Cookie.HttpOnly = true;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SameSite = SameSiteMode.None;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     });
 
 // ── 기본 보안: IP당 분당 60회 요청 제한 ──────────────────────
@@ -121,6 +136,9 @@ builder.Services.AddRateLimiter(options =>
 });
 
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<SaveAuthorizationCodeIssuanceLogHandler>();
+builder.Services.AddScoped<SaveRefreshTokenLedgerHandler>();
 
 // 별도 프로젝트로 도는 클라이언트(홈페이지)의 브라우저 요청 허용
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
@@ -174,6 +192,8 @@ if (app.Environment.IsDevelopment())
     {
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "AuthServer API v1");
         options.RoutePrefix = "swagger";
+        options.ConfigObject.AdditionalItems["tagsSorter"] = "alpha";
+        options.ConfigObject.AdditionalItems["operationsSorter"] = "alpha";
     });
 }
 else
@@ -214,6 +234,133 @@ app.MapPost("/api/register", async (Web.Controllers.RegisterUserRequest req, Reg
         });
 }).ExcludeFromDescription();
 
+// 하위 호환성을 위한 /connect/logout 매핑 (Swagger UI에는 /api/auth/logout으로 단일 노출)
+app.MapGet("/connect/logout", (HttpContext context) =>
+{
+    var qs = context.Request.QueryString.Value;
+    return Results.Redirect($"/api/auth/logout{qs}");
+}).ExcludeFromDescription();
+
+app.MapPost("/connect/logout", (HttpContext context) =>
+{
+    var qs = context.Request.QueryString.Value;
+    return Results.Redirect($"/api/auth/logout{qs}");
+}).ExcludeFromDescription();
+
 app.Run();
+
+public class SaveAuthorizationCodeIssuanceLogHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>
+{
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AppDbContext _db;
+
+    public SaveAuthorizationCodeIssuanceLogHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
+    {
+        _httpContextAccessor = httpContextAccessor;
+        _db = db;
+    }
+
+    public async ValueTask HandleAsync(OpenIddictServerEvents.ApplyAuthorizationResponseContext context)
+    {
+        var code = context.Response?.Code;
+        if (!string.IsNullOrEmpty(code))
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            var codeHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(code))).ToLowerInvariant();
+            var challenge = context.Request?.CodeChallenge ?? string.Empty;
+            var challengeHash = !string.IsNullOrEmpty(challenge)
+                ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(challenge))).ToLowerInvariant()
+                : string.Empty;
+
+            var userEmail = context.Request?.Username ?? string.Empty;
+            var subject = string.Empty;
+            if (httpContext?.User.Identity?.IsAuthenticated == true)
+            {
+                subject = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+                userEmail = httpContext.User.FindFirstValue(ClaimTypes.Email) 
+                         ?? httpContext.User.FindFirstValue("email") 
+                         ?? userEmail;
+            }
+
+            if (string.IsNullOrWhiteSpace(userEmail) && long.TryParse(subject, out var uid))
+            {
+                var u = await _db.Users.FindAsync([uid], httpContext?.RequestAborted ?? default);
+                if (u != null)
+                {
+                    userEmail = u.Email;
+                }
+            }
+
+            var scopesList = context.Request?.GetScopes();
+            var scopes = scopesList.HasValue ? string.Join(" ", scopesList.Value) : string.Empty;
+
+            _db.AuthorizationCodes.Add(new AuthorizationCode
+            {
+                AuthorizationCodeHash = codeHash,
+                CodeChallengeHash = challengeHash,
+                ClientId = context.Request?.ClientId ?? "company-homepage",
+                RedirectUri = context.Request?.RedirectUri ?? string.Empty,
+                Subject = subject,
+                UserEmail = userEmail,
+                Scope = scopes,
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(1),
+                IsRedeemed = false
+            });
+            await _db.SaveChangesAsync(httpContext?.RequestAborted ?? default);
+        }
+    }
+}
+
+public class SaveRefreshTokenLedgerHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyTokenResponseContext>
+{
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AppDbContext _db;
+
+    public SaveRefreshTokenLedgerHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
+    {
+        _httpContextAccessor = httpContextAccessor;
+        _db = db;
+    }
+
+    public async ValueTask HandleAsync(OpenIddictServerEvents.ApplyTokenResponseContext context)
+    {
+        var refreshToken = context.Response?.RefreshToken;
+        if (!string.IsNullOrEmpty(refreshToken))
+        {
+            var httpContext = _httpContextAccessor.HttpContext;
+            var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken))).ToLowerInvariant();
+            var subject = httpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var email = httpContext?.User.FindFirstValue(ClaimTypes.Email) 
+                     ?? httpContext?.User.FindFirstValue("email") 
+                     ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(email) && long.TryParse(subject, out var uid))
+            {
+                var u = await _db.Users.FindAsync([uid], httpContext?.RequestAborted ?? default);
+                if (u != null)
+                {
+                    email = u.Email;
+                }
+            }
+
+            var scopesList = context.Request?.GetScopes();
+            var scopes = scopesList.HasValue ? string.Join(" ", scopesList.Value) : string.Empty;
+
+            _db.RefreshTokens.Add(new RefreshToken
+            {
+                RefreshTokenHash = tokenHash,
+                Subject = subject,
+                UserEmail = email,
+                ClientId = context.Request?.ClientId ?? "company-homepage",
+                Scope = scopes,
+                CreatedAtUtc = DateTime.UtcNow,
+                ExpiresAtUtc = DateTime.UtcNow.AddDays(14),
+                IsRevoked = false
+            });
+            await _db.SaveChangesAsync(httpContext?.RequestAborted ?? default);
+        }
+    }
+}
 
 

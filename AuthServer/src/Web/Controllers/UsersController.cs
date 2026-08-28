@@ -12,7 +12,7 @@ namespace Web.Controllers;
 [ApiController]
 [Route("api/users")]
 [Produces("application/json")]
-[Tags("사용자 및 계정 관리 (User Management)")]
+[Tags("목업 개발 항목 - 사용자 및 계정 관리 (User Management)")]
 public class UsersController(
     RegisterUserUseCase registerUseCase,
     AppDbContext db) : ControllerBase

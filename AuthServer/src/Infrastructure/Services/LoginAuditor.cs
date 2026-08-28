@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Domain.Entities;
 using Infrastructure.Persistence;
 
@@ -8,7 +8,7 @@ public class LoginAuditor(AppDbContext db) : ILoginAuditor
 {
     public async Task RecordAsync(string userName, string ipAddress, bool succeeded, CancellationToken ct = default)
     {
-        db.LoginAudits.Add(new LoginAudit
+        db.LoginLogs.Add(new LoginLog
         {
             UserName = userName,
             IpAddress = ipAddress,

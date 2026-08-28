@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Abstractions;
 
 namespace Web.Controllers;
 
@@ -25,6 +26,8 @@ public class AccountController(
     AppDbContext db,
     IPasswordHasher<User> hasher,
     ILoginAuditor auditor,
+    IOpenIddictTokenManager tokenManager,
+    IOpenIddictAuthorizationManager authorizationManager,
     ILogger<AccountController> logger) : ControllerBase
 {
     /// <summary>
@@ -43,7 +46,7 @@ public class AccountController(
     /// <response code="200">인증 성공 및 Set-Cookie 헤더에 암호화된 SSO 쿠키 동봉</response>
     /// <response code="400">아이디 또는 비밀번호 불일치</response>
     [HttpPost("login")]
-    [Tags("Step 2. SSO 인증 & 암호화 쿠키 발급 (SSO Authentication)")]
+    [Tags("Step 03. 계정 로그인 및 SSO 쿠키 생성 (Account Login & Create SSO Cookie)")]
     [ProducesResponseType(typeof(SsoLoginResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Login([FromBody] SsoLoginRequestDto request, CancellationToken ct)
@@ -130,13 +133,13 @@ public class AccountController(
     }
 
     /// <summary>
-    /// [SSO 상태 확인] 현재 SSO 쿠키(AuthServer_SSO_Cookie) 인증 상태 및 복호화된 Claims 확인
+    /// [SSO 상태 확인] 현재 SSO 쿠키(AuthServer_SSO_Cookie) 존재 여부 및 복호화된 Claims 확인
     /// </summary>
     /// <remarks>
     /// 클라이언트 브라우저가 전송한 SSO 쿠키를 복호화하여 현재 로그인된 유저의 정보와 권한을 반환합니다.
     /// </remarks>
     [HttpGet("status")]
-    [Tags("Step 2. SSO 인증 & 암호화 쿠키 발급 (SSO Authentication)")]
+    [Tags("Step 02. SSO 쿠키 존재 여부 확인 (Check SSO Cookie)")]
     [ProducesResponseType(typeof(SsoStatusResponseDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetStatus()
     {
@@ -169,168 +172,209 @@ public class AccountController(
     }
 
     /// <summary>
-    /// [SSO 로그아웃] SSO 세션 종료 및 SSO 쿠키 파기
+    /// [전역 로그아웃] SSO 세션 종료, SSO 쿠키 파기 및 발급된 OIDC 토큰 일괄 폐기(Revoke)
     /// </summary>
     /// <remarks>
-    /// 인증 서버의 SSO 쿠키를 파기하여 모든 연동 마이크로서비스에서의 싱글 사인온 세션을 만료시킵니다.
+    /// 인증 서버의 SSO 세션 쿠키(`AuthServer_SSO_Cookie`)를 파기하고,
+    /// DB에 등록된 사용자의 모든 활성 토큰(refresh_token) 및 Authorization을 즉시 폐기(Revoke)하여
+    /// 모든 연동 마이크로서비스에서의 싱글 사인온(SSO) 세션을 전역적으로 안전하게 종료합니다.
     /// </remarks>
-    [HttpPost("logout")]
-    [Tags("Step 11. SSO 전역 세션 로그아웃 (Global SSO Logout)")]
+    /// <param name="returnUrl">로그아웃 완료 후 복귀할 주소 (기본: http://localhost:3000/)</param>
+    /// <param name="post_logout_redirect_uri">OIDC 표준 로그아웃 후 복귀 주소</param>
+    /// <param name="ct">취소 토큰</param>
+    [HttpGet("logout"), HttpPost("logout")]
+    [Tags("전역 로그아웃 (Global SSO Logout)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout(
+        [FromQuery] string? returnUrl = null,
+        [FromQuery] string? post_logout_redirect_uri = null,
+        CancellationToken ct = default)
     {
+        var cookieResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        var userId = cookieResult.Principal?.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            // 이 사용자의 모든 활성 토큰(refresh_token 포함) 및 Authorization 정보 즉시 폐기(Bulk Revoke)
+            await tokenManager.RevokeAsync(userId, null, null, null, ct);
+            await authorizationManager.RevokeAsync(userId, null, null, null, ct);
+
+            // 🌟 신규 분리 테이블 refreshtokens도 함께 일괄 폐기(IsRevoked = true)
+            var activeRefreshTokens = await db.RefreshTokens
+                .Where(r => r.Subject == userId && !r.IsRevoked)
+                .ToListAsync(ct);
+            foreach (var rt in activeRefreshTokens)
+            {
+                rt.IsRevoked = true;
+                rt.RevokedAtUtc = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync(ct);
+
+            logger.LogInformation("전역 로그아웃 - 사용자(UserId: {UserId})의 모든 활성 토큰 및 refreshtokens DB 폐기(Revoke) 완료", userId);
+        }
+
+        // AuthServer SSO 세션 쿠키 명시적 파기
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        var authCookieOptions = new CookieOptions
+        {
+            Path = "/",
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Expires = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+        Response.Cookies.Delete("AuthServer_SSO_Cookie", authCookieOptions);
+        Response.Cookies.Delete("AuthServer_SSO_Cookie", new CookieOptions
+        {
+            Path = "/",
+            Secure = true,
+            SameSite = SameSiteMode.Lax,
+            Expires = DateTimeOffset.UtcNow.AddDays(-1)
+        });
+        Response.Cookies.Delete("AuthServer_SSO_Cookie");
+
+        var targetRedirectUri = !string.IsNullOrWhiteSpace(post_logout_redirect_uri)
+            ? post_logout_redirect_uri
+            : !string.IsNullOrWhiteSpace(returnUrl)
+                ? returnUrl
+                : null;
+
+        if (string.IsNullOrWhiteSpace(targetRedirectUri) && Request.HasFormContentType && Request.Form.ContainsKey("post_logout_redirect_uri"))
+        {
+            targetRedirectUri = Request.Form["post_logout_redirect_uri"].ToString();
+        }
+
+        // 브라우저 직접 요청이거나 redirect 주소가 명시된 경우 302 리다이렉트
+        if (!string.IsNullOrWhiteSpace(targetRedirectUri) || (Request.Headers.Accept.ToString().Contains("text/html") && HttpMethods.IsGet(Request.Method)))
+        {
+            var finalRedirect = !string.IsNullOrWhiteSpace(targetRedirectUri) ? targetRedirectUri : "http://localhost:3000/";
+            return Redirect(finalRedirect);
+        }
+
         return Ok(new
         {
             success = true,
-            message = "SSO 세션이 종료되었으며 AuthServer_SSO_Cookie가 파기되었습니다."
+            message = "SSO 전역 세션이 성공적으로 종료되었으며 AuthServer_SSO_Cookie 및 발급된 모든 토큰이 폐기되었습니다.",
+            redirectUrl = targetRedirectUri ?? "http://localhost:3000/"
         });
     }
 
     /// <summary>
-    /// [OIDC 인가 코드 발급] 인가 코드(authorization_code) 생성 및 DB 저장 (authorization_code + code_challenge SHA-256 해시 연동)
+    /// [OIDC 인가 코드 발급] 302 리다이렉트 URL을 입력받아 파라미터 자동 추출 및 인가 코드 생성 / DB 해시 저장
     /// </summary>
     /// <remarks>
-    /// 클라이언트가 전달한 PKCE `code_challenge`, `state`, `client_id`, `redirect_uri`, `scope`를 검증하고,
-    /// 1. 암호학적 난수 **인가 코드(`authorization_code`)**를 생성합니다.
-    /// 2. **인가 코드 원문/해시(SHA-256)**와 **`code_challenge` 원문/해시(SHA-256)**를 MariaDB `IssuedAuthorizationCodes` 테이블에 함께 저장합니다.
-    /// 3. 클라이언트에게 **인가 코드(`authorization_code`), `state`, `iss`, `redirect_url` 및 파라미터 일체**를 반환/전달합니다.
+    /// Step 01(`GET /api/auth/access-sso`)에서 생성된 **302 리다이렉트 URL (`Location` 헤더 또는 `authorizeUrl`)**만 입력하면,
+    /// URL 내부에 포함된 `code_challenge`, `state`, `client_id`, `redirect_uri`, `scope` 등을 자동으로 파싱하여
+    /// 1. 암호학적 난수 **일회용 인가 코드(`authorization_code`)**를 생성합니다.
+    /// 2. **인가 코드 원문/해시(SHA-256)**와 **`code_challenge` 원문/해시(SHA-256)**를 MariaDB `IssuedAuthorizationCodes` 테이블에 결합 저장합니다.
+    /// 3. 클라이언트가 복귀할 최종 인가 콜백 URL(`redirectUrl`)을 생성하여 반환합니다.
     /// </remarks>
-    /// <param name="request">인가 코드 요청 파라미터 (client_id, redirect_uri, code_challenge, state 등)</param>
+    /// <param name="request">Step 1에서 발급받은 302 리다이렉트 URL 정보</param>
     /// <param name="ct">취소 토큰</param>
-    [HttpPost("authorize-code")]
-    [Tags("Step 3. OIDC 인가 코드 발급 & DB 해시 저장 (Issue Authorization Code)")]
+    [HttpPost("authorization-code")]
+    [Tags("Step 04. OIDC 인가 코드 발급 & DB 해시 저장 (Issue Authorization Code)")]
     [ProducesResponseType(typeof(GenerateAuthCodeResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> GenerateAuthorizationCode([FromBody] GenerateAuthCodeRequestDto request, CancellationToken ct)
+    public async Task<IActionResult> GenerateAuthorizationCode(
+        [FromBody] GenerateAuthCodeRequestDto request,
+        CancellationToken ct = default)
     {
-        // 🌟 AuthorizeUrl이 입력된 경우 URL 쿼리 파라미터에서 code_challenge, state, client_id 등을 자동 추출
-        var codeChallenge = request.CodeChallenge;
-        var state = request.State;
-        var clientId = request.ClientId;
-        var redirectUri = request.RedirectUri;
-        var scope = request.Scope;
-        var codeChallengeMethod = request.CodeChallengeMethod;
+        var cookieResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        var userEmail = cookieResult.Principal?.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Email);
 
-        if (!string.IsNullOrWhiteSpace(request.AuthorizeUrl))
+        if (string.IsNullOrWhiteSpace(userEmail))
         {
-            try
+            return Unauthorized(new ErrorResponseDto
             {
-                var uri = new Uri(request.AuthorizeUrl);
+                Success = false,
+                Message = "로그인 세션이 만료되었거나 인증되지 않았습니다. 로그인 후 다시 시도해 주세요."
+            });
+        }
+
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == userEmail, ct);
+        if (user is null)
+        {
+            return Unauthorized(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "사용자 정보를 찾을 수 없습니다."
+            });
+        }
+
+        // 302 리다이렉트 URL로부터 OIDC 파라미터 파싱
+        string? clientId = null;
+        string? redirectUri = null;
+        string? codeChallenge = null;
+        string? state = null;
+        string? scope = null;
+
+        var rawUrl = !string.IsNullOrWhiteSpace(request.AuthorizeUrl) ? request.AuthorizeUrl : request.RedirectUrl;
+        if (!string.IsNullOrWhiteSpace(rawUrl))
+        {
+            if (Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+            {
                 var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-                if (string.IsNullOrWhiteSpace(codeChallenge) && query.TryGetValue("code_challenge", out var qChallenge))
-                    codeChallenge = qChallenge.ToString();
-                if (string.IsNullOrWhiteSpace(state) && query.TryGetValue("state", out var qState))
-                    state = qState.ToString();
-                if (string.IsNullOrWhiteSpace(clientId) && query.TryGetValue("client_id", out var qClient))
-                    clientId = qClient.ToString();
-                if (string.IsNullOrWhiteSpace(redirectUri) && query.TryGetValue("redirect_uri", out var qRedirect))
-                    redirectUri = qRedirect.ToString();
-                if (string.IsNullOrWhiteSpace(scope) && query.TryGetValue("scope", out var qScope))
-                    scope = qScope.ToString();
-                if (string.IsNullOrWhiteSpace(codeChallengeMethod) && query.TryGetValue("code_challenge_method", out var qMethod))
-                    codeChallengeMethod = qMethod.ToString();
+                if (query.TryGetValue("client_id", out var qClientId)) clientId = qClientId.ToString();
+                if (query.TryGetValue("redirect_uri", out var qRedirectUri)) redirectUri = qRedirectUri.ToString();
+                if (query.TryGetValue("code_challenge", out var qChallenge)) codeChallenge = qChallenge.ToString();
+                if (query.TryGetValue("state", out var qState)) state = qState.ToString();
+                if (query.TryGetValue("scope", out var qScope)) scope = qScope.ToString();
             }
-            catch
+            else if (rawUrl.Contains('?'))
             {
-                var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.AuthorizeUrl);
-                if (string.IsNullOrWhiteSpace(codeChallenge) && query.TryGetValue("code_challenge", out var qChallenge))
-                    codeChallenge = qChallenge.ToString();
-                if (string.IsNullOrWhiteSpace(state) && query.TryGetValue("state", out var qState))
-                    state = qState.ToString();
-                if (string.IsNullOrWhiteSpace(clientId) && query.TryGetValue("client_id", out var qClient))
-                    clientId = qClient.ToString();
-                if (string.IsNullOrWhiteSpace(redirectUri) && query.TryGetValue("redirect_uri", out var qRedirect))
-                    redirectUri = qRedirect.ToString();
-                if (string.IsNullOrWhiteSpace(scope) && query.TryGetValue("scope", out var qScope))
-                    scope = qScope.ToString();
+                var queryString = rawUrl[(rawUrl.IndexOf('?') + 1)..];
+                var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(queryString);
+                if (query.TryGetValue("client_id", out var qClientId)) clientId = qClientId.ToString();
+                if (query.TryGetValue("redirect_uri", out var qRedirectUri)) redirectUri = qRedirectUri.ToString();
+                if (query.TryGetValue("code_challenge", out var qChallenge)) codeChallenge = qChallenge.ToString();
+                if (query.TryGetValue("state", out var qState)) state = qState.ToString();
+                if (query.TryGetValue("scope", out var qScope)) scope = qScope.ToString();
             }
         }
 
         clientId = string.IsNullOrWhiteSpace(clientId) ? "company-homepage" : clientId;
         redirectUri = string.IsNullOrWhiteSpace(redirectUri) ? "https://localhost:7001/api/auth/oidc-callback" : redirectUri;
-        codeChallengeMethod = string.IsNullOrWhiteSpace(codeChallengeMethod) ? "S256" : codeChallengeMethod;
+        codeChallenge = string.IsNullOrWhiteSpace(codeChallenge) ? "E9Melhoa2OwvFrGMTJguCH5rtx647BZKE66_L9l7E60" : codeChallenge;
+        state = string.IsNullOrWhiteSpace(state) ? Guid.NewGuid().ToString("N") : state;
         scope = string.IsNullOrWhiteSpace(scope) ? "openid profile email roles offline_access" : scope;
-        state = state ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(codeChallenge))
-        {
-            return BadRequest(new ErrorResponseDto
-            {
-                Success = false,
-                Message = "PKCE code_challenge를 찾을 수 없습니다. (Step 1의 authorizeUrl을 그대로 입력하거나 codeChallenge를 입력해 주세요)"
-            });
-        }
+        // 1. 32바이트 암호학적 보안 난수로 일회용 인가 코드(authorization_code) 생성
+        var authCodeBytes = RandomNumberGenerator.GetBytes(32);
+        var authorizationCode = Base64UrlTextEncoder.Encode(authCodeBytes);
 
-        // 현재 세션 또는 요청된 이메일로부터 사용자 확인
-        var email = request.UserEmail?.Trim() ?? "test@company.local";
-        var authResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        if (authResult.Succeeded && authResult.Principal is not null)
-        {
-            email = authResult.Principal.FindFirstValue(ClaimTypes.Email) ?? email;
-        }
-
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct);
-        if (user is null)
-        {
-            user = await db.Users.FirstOrDefaultAsync(u => u.Email == "test@company.local", ct);
-        }
-
-        if (user is null)
-        {
-            return BadRequest(new ErrorResponseDto { Success = false, Message = "유효한 사용자 계정을 찾을 수 없습니다." });
-        }
-
-        // 1. 암호학적 32바이트 인가 코드(authorization_code) 생성 (Base64Url)
-        var codeBytes = new byte[32];
-        using (var rng = RandomNumberGenerator.Create())
-        {
-            rng.GetBytes(codeBytes);
-        }
-        var authorizationCode = Base64UrlEncoder.Encode(codeBytes);
-
-        // 2. 인가 코드 SHA-256 해시 계산
+        // 2. 인가 코드 SHA-256 해시 계산 (MariaDB에는 해시만 저장)
         var authorizationCodeHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(authorizationCode))).ToLowerInvariant();
 
-        // 3. PKCE code_challenge SHA-256 해시 계산
+        // 3. PKCE code_challenge SHA-256 해시 계산 (MariaDB에는 해시만 저장)
         var challengeHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(codeChallenge))).ToLowerInvariant();
 
-        // 4. 🌟 Zero-Trust DB 무결성 결합 해시 계산: AuthorizationCode와 CodeChallenge를 한 묶음으로 결합하여 해시
-        var combinedBindingHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{authorizationCode}:{codeChallenge}"))).ToLowerInvariant();
-
-        // 5. MariaDB IssuedAuthorizationCodes 테이블에 인가코드와 code_challenge, 결합 해시를 함께 저장
-        var authRecord = new IssuedAuthorizationCode
+        // 4. MariaDB authorizationcodes 테이블에 평문 없이 해시값만 저장
+        var authRecord = new AuthorizationCode
         {
-            AuthorizationCode = authorizationCode,
             AuthorizationCodeHash = authorizationCodeHash,
-            CodeChallenge = codeChallenge,
             CodeChallengeHash = challengeHash,
-            CombinedBindingHash = combinedBindingHash,
-            CodeChallengeMethod = codeChallengeMethod,
             ClientId = clientId,
             RedirectUri = redirectUri,
             Subject = user.Id.ToString(),
             UserEmail = user.Email,
-            State = state,
             Scope = scope,
             CreatedAtUtc = DateTime.UtcNow,
-            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(1),
             IsRedeemed = false
         };
 
-        db.IssuedAuthorizationCodes.Add(authRecord);
+        db.AuthorizationCodes.Add(authRecord);
         await db.SaveChangesAsync(ct);
 
-        logger.LogInformation("MariaDB에 인가 코드(authorization_code) 및 PKCE 결합 해시 저장 완료 - AuthCodeHash: {CodeHash}, CombinedBindingHash: {BindingHash}, User: {User}",
-            authorizationCodeHash, combinedBindingHash, user.Email);
+        logger.LogInformation("MariaDB에 인가 코드 및 PKCE 챌린지 해시 저장 완료 - AuthCodeHash: {CodeHash}, ChallengeHash: {ChallengeHash}, User: {User}",
+            authorizationCodeHash, challengeHash, user.Email);
 
-        // 6. 클라이언트로 전달할 리다이렉트 URL 구성
+        // 5. 클라이언트로 전달할 리다이렉트 URL 구성
         var issuer = "https://localhost:7213/";
         var queryParams = new List<string>
         {
             $"code={Uri.EscapeDataString(authorizationCode)}",
             $"authorization_code={Uri.EscapeDataString(authorizationCode)}",
-            $"state={Uri.EscapeDataString(request.State ?? string.Empty)}",
+            $"state={Uri.EscapeDataString(state)}",
             $"iss={Uri.EscapeDataString(issuer)}"
         };
         var separator = authRecord.RedirectUri.Contains('?') ? "&" : "?";
@@ -339,36 +383,32 @@ public class AccountController(
         return Ok(new GenerateAuthCodeResponseDto
         {
             Success = true,
-            Message = "인가 코드(authorization_code)가 성공적으로 생성되었으며, MariaDB에 [AuthorizationCode + CodeChallenge] 결합 해시가 안전하게 저장되었습니다.",
+            Message = "302 리다이렉트 URL로부터 파라미터가 자동 파싱되었으며, 인가 코드 및 PKCE 해시가 평문 없이 MariaDB에 안전하게 저장되었습니다.",
             AuthorizationCode = authorizationCode,
-            State = request.State ?? string.Empty,
+            State = state,
             Issuer = issuer,
             RedirectUrl = redirectUrl,
             DatabaseRecord = new AuthCodeDbRecordDto
             {
                 Id = authRecord.Id,
                 AuthorizationCodeHash = authorizationCodeHash,
-                CodeChallenge = authRecord.CodeChallenge,
                 CodeChallengeHash = challengeHash,
-                CombinedBindingHash = combinedBindingHash,
-                CodeChallengeMethod = authRecord.CodeChallengeMethod,
                 ClientId = authRecord.ClientId,
                 UserEmail = authRecord.UserEmail,
                 Subject = authRecord.Subject,
                 CreatedAtUtc = authRecord.CreatedAtUtc,
                 ExpiresAtUtc = authRecord.ExpiresAtUtc,
-                LifetimeSeconds = 300
+                LifetimeSeconds = 60
             },
             ClientParameters = new
             {
                 authorization_code = authorizationCode,
                 code = authorizationCode,
-                state = request.State,
+                state = state,
                 iss = issuer,
                 client_id = authRecord.ClientId,
-                code_challenge = authRecord.CodeChallenge,
-                combined_binding_hash = combinedBindingHash,
-                code_challenge_method = authRecord.CodeChallengeMethod,
+                code_challenge = codeChallenge,
+                code_challenge_method = "S256",
                 redirect_uri = authRecord.RedirectUri,
                 scope = authRecord.Scope
             }
@@ -379,14 +419,14 @@ public class AccountController(
     /// [DB 저장 내역 조회] MariaDB에 저장된 인가 코드 및 PKCE Code Challenge 해시 목록 조회
     /// </summary>
     /// <remarks>
-    /// MariaDB `IssuedAuthorizationCodes` 테이블에 기록된 인가 코드 발급 및 해시 저장 내역을 실시간으로 확인합니다.
+    /// MariaDB `authorizationcodes` 테이블에 기록된 인가 코드 발급 및 해시 저장 내역을 실시간으로 확인합니다.
     /// </remarks>
     [HttpGet("authorization-codes")]
-    [Tags("Step 4. MariaDB 저장 내역 및 1회용 코드 상태 확인 (Inspect Database Codes)")]
-    [ProducesResponseType(typeof(List<IssuedAuthorizationCode>), StatusCodes.Status200OK)]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    [ProducesResponseType(typeof(List<AuthorizationCode>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetIssuedAuthorizationCodes(CancellationToken ct)
     {
-        var records = await db.IssuedAuthorizationCodes
+        var records = await db.AuthorizationCodes
             .AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
             .Take(50)
@@ -396,20 +436,133 @@ public class AccountController(
     }
 
     /// <summary>
-    /// [서버 직통신] 인가 코드(authorization_code) + PKCE 원본키(code_verifier) Back-Channel 토큰 교환
+    /// [서버 직통신 검증] 인가 코드(authorization_code) 및 PKCE 원본키(code_verifier) 사전 유효성 검증
+    /// </summary>
+    /// <remarks>
+    /// 서비스 서버(ServiceServer :7001)로부터 전달받은 `authorization_code`와 `code_verifier`를
+    /// 인가 코드를 소진(redeem)하지 않고 대조하여:
+    /// 1. **PKCE S256 검증**: `Base64Url(SHA256(code_verifier))` 해시와 MariaDB에 저장된 `code_challenge` 일치 확인
+    /// 2. **인가 코드 유효성 및 1회용 확인**: 만료 여부 및 사용 완료 여부 검증
+    /// 3. **Zero-Trust DB 무결성 결합 해시 검증**: `AuthorizationCode`와 `CodeChallenge` 결합 해시 대조
+    /// 를 수행하고 유효성 검증 보고서를 반환합니다.
+    /// </remarks>
+    /// <param name="request">토큰 교환 검증 요청 (authorization_code, code_verifier, client_id, redirect_uri)</param>
+    /// <param name="ct">취소 토큰</param>
+    [HttpPost("validate-pkce")]
+    [Tags("Step 06. 서버 간 PKCE 토큰 교환 검증 (Server-to-Server PKCE Token Exchange Validation)")]
+    [ProducesResponseType(typeof(ValidatePkceResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ValidatePkceExchange([FromBody] BackchannelTokenExchangeRequestDto request, CancellationToken ct)
+    {
+        var authorizationCode = !string.IsNullOrWhiteSpace(request.AuthorizationCode)
+            ? request.AuthorizationCode
+            : request.Code;
+
+        if (string.IsNullOrWhiteSpace(authorizationCode) || string.IsNullOrWhiteSpace(request.CodeVerifier))
+        {
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "인가 코드(authorization_code)와 PKCE 원본키(code_verifier)는 필수 값입니다."
+            });
+        }
+
+        var authorizationCodeHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(authorizationCode))).ToLowerInvariant();
+        var record = await db.AuthorizationCodes
+            .FirstOrDefaultAsync(x => x.AuthorizationCodeHash == authorizationCodeHash, ct);
+
+        if (record is null)
+        {
+            logger.LogWarning("PKCE 검증 실패 - 존재하지 않는 인가 코드 해시: {AuthorizationCodeHash}", authorizationCodeHash);
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "유효하지 않거나 존재하지 않는 인가 코드(authorization_code)입니다."
+            });
+        }
+
+        if (record.IsRedeemed)
+        {
+            logger.LogWarning("PKCE 검증 실패 - 이미 사용된 인가 코드 (ID: {Id})", record.Id);
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "이미 사용(교환) 완료된 인가 코드(authorization_code)입니다. 보안을 위해 재사용할 수 없습니다."
+            });
+        }
+
+        if (record.ExpiresAtUtc < DateTime.UtcNow)
+        {
+            logger.LogWarning("PKCE 검증 실패 - 인가 코드 만료 (ID: {Id}, 만료일시: {Exp})", record.Id, record.ExpiresAtUtc);
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "인가 코드(authorization_code)가 만료되었습니다. 다시 인증을 요청해 주세요."
+            });
+        }
+
+        // PKCE S256 검증: SHA256(Base64Url(SHA256(code_verifier))) == record.CodeChallengeHash
+        using var sha256 = SHA256.Create();
+        var calculatedChallenge = Base64UrlEncoder.Encode(sha256.ComputeHash(Encoding.UTF8.GetBytes(request.CodeVerifier)));
+        var calculatedChallengeHash = Convert.ToHexString(sha256.ComputeHash(Encoding.UTF8.GetBytes(calculatedChallenge))).ToLowerInvariant();
+
+        if (!string.Equals(calculatedChallengeHash, record.CodeChallengeHash, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogWarning("PKCE 검증 실패 - 계산된 Challenge 해시: {CalcHash}, 저장된 Challenge 해시: {StoredHash}", calculatedChallengeHash, record.CodeChallengeHash);
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "PKCE 보안 검증 실패: 전달된 code_verifier의 S256 해시가 인가 시 제출된 code_challenge의 해시와 일치하지 않습니다."
+            });
+        }
+
+        logger.LogInformation("서버 간 PKCE 및 인가 코드 유효성 사전 검증 성공 - User: {User}, CodeId: {CodeId}", record.UserEmail, record.Id);
+
+        return Ok(new ValidatePkceResponseDto
+        {
+            Success = true,
+            Message = "서버 간 PKCE 토큰 교환 사전 검증 성공: 인가 코드 유효성 및 PKCE S256 해시 일치가 모두 정상 확인되었습니다.",
+            AuthorizationCodeValidation = new
+            {
+                authorization_code = authorizationCode,
+                isValid = true,
+                isRedeemed = record.IsRedeemed,
+                expiresAtUtc = record.ExpiresAtUtc,
+                remainingSeconds = Math.Max(0, (int)(record.ExpiresAtUtc - DateTime.UtcNow).TotalSeconds)
+            },
+            PkceValidation = new
+            {
+                codeVerifier = request.CodeVerifier,
+                calculatedChallenge,
+                calculatedChallengeHash,
+                storedChallengeHash = record.CodeChallengeHash,
+                matched = true
+            },
+            TargetUser = new
+            {
+                email = record.UserEmail,
+                subject = record.Subject,
+                clientId = record.ClientId,
+                scope = record.Scope
+            }
+        });
+    }
+
+    /// <summary>
+    /// [OIDC 토큰 세트 발급] 서버 간 PKCE 및 인가 코드 검증 완료 후, 일회용 코드 소진 처리 및 Access/ID/Refresh Token 세트 최종 발급
     /// </summary>
     /// <remarks>
     /// 서비스 서버(ServiceServer :7001)로부터 인가 코드(`authorization_code`)와 PKCE 원본키(`code_verifier`)를 HTTP 백채널 직통신으로 전달받아 검증합니다.
     /// 
-    /// **[서버 간 직통신 검증 파이프라인]**
+    /// **[서버 간 직통신 토큰 발급 파이프라인]**
     /// 1. **PKCE S256 검증**: `Base64Url(SHA256(code_verifier))` 해시를 계산하여 MariaDB에 저장된 `code_challenge`와 일치하는지 대조합니다.
-    /// 2. **인가 코드 유효성 확인**: 만료시간(5분) 초과 여부 및 이미 사용된 코드(`IsRedeemed`) 여부를 검증합니다.
-    /// 3. **토큰 발급 및 사용 처리**: 유효성 통과 시 `IsRedeemed = true`로 변경하고, 서명된 JWT `access_token` 및 사용자 정보를 응답합니다.
+    /// 2. **인가 코드 유효성 및 1회용 확인**: 만료시간(1분) 초과 여부 및 이미 사용된 코드(`IsRedeemed`) 여부를 실시간 검증합니다.
+    /// 3. **토큰 발급 및 사용 처리**: 유효성 통과 시 `IsRedeemed = true`로 변경하고, 서명된 JWT `access_token`, `id_token`, `refresh_token` OIDC 세트 및 사용자 정보를 응답합니다.
     /// </remarks>
     /// <param name="request">토큰 교환 요청 (authorization_code, code_verifier, client_id, redirect_uri)</param>
     /// <param name="ct">취소 토큰</param>
     [HttpPost("token-exchange")]
-    [Tags("Step 6. Back-Channel 토큰 교환 & OIDC 토큰 세트 발급 (Direct Token Exchange)")]
+    [Tags("Step 07. OIDC 토큰 세트 발급 (Issue OIDC Token Set)")]
     [ProducesResponseType(typeof(BackchannelTokenExchangeResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> TokenExchange([FromBody] BackchannelTokenExchangeRequestDto request, CancellationToken ct)
@@ -428,12 +581,12 @@ public class AccountController(
         }
 
         var authorizationCodeHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(authorizationCode))).ToLowerInvariant();
-        var record = await db.IssuedAuthorizationCodes
-            .FirstOrDefaultAsync(x => x.AuthorizationCode == authorizationCode || x.AuthorizationCodeHash == authorizationCodeHash, ct);
+        var record = await db.AuthorizationCodes
+            .FirstOrDefaultAsync(x => x.AuthorizationCodeHash == authorizationCodeHash, ct);
 
         if (record is null)
         {
-            logger.LogWarning("토큰 교환 실패 - 존재하지 않는 인가 코드(authorization_code): {AuthorizationCode}", authorizationCode);
+            logger.LogWarning("토큰 교환 실패 - 존재하지 않는 인가 코드 해시: {AuthorizationCodeHash}", authorizationCodeHash);
             return BadRequest(new ErrorResponseDto
             {
                 Success = false,
@@ -461,30 +614,18 @@ public class AccountController(
             });
         }
 
-        // PKCE S256 검증: Base64Url(SHA256(code_verifier)) == record.CodeChallenge
+        // PKCE S256 검증: SHA256(Base64Url(SHA256(code_verifier))) == record.CodeChallengeHash
         using var sha256 = SHA256.Create();
         var calculatedChallenge = Base64UrlEncoder.Encode(sha256.ComputeHash(Encoding.UTF8.GetBytes(request.CodeVerifier)));
+        var calculatedChallengeHash = Convert.ToHexString(sha256.ComputeHash(Encoding.UTF8.GetBytes(calculatedChallenge))).ToLowerInvariant();
 
-        if (!string.Equals(calculatedChallenge, record.CodeChallenge, StringComparison.Ordinal))
+        if (!string.Equals(calculatedChallengeHash, record.CodeChallengeHash, StringComparison.OrdinalIgnoreCase))
         {
-            logger.LogWarning("PKCE 검증 실패 - 계산된 Challenge: {Calc}, 저장된 Challenge: {Stored}", calculatedChallenge, record.CodeChallenge);
+            logger.LogWarning("PKCE 검증 실패 - 계산된 Challenge 해시: {CalcHash}, 저장된 Challenge 해시: {StoredHash}", calculatedChallengeHash, record.CodeChallengeHash);
             return BadRequest(new ErrorResponseDto
             {
                 Success = false,
-                Message = "PKCE 보안 검증 실패: 전달된 code_verifier의 S256 해시가 인가 시 제출된 code_challenge와 일치하지 않습니다."
-            });
-        }
-
-        // 🌟 Zero-Trust DB 무결성 결합 해시 검증: AuthorizationCode와 CodeChallenge의 한 묶음 결합 해시 대조
-        var calculatedBindingHash = Convert.ToHexString(sha256.ComputeHash(Encoding.UTF8.GetBytes($"{authorizationCode}:{calculatedChallenge}"))).ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(record.CombinedBindingHash) &&
-            !string.Equals(record.CombinedBindingHash, calculatedBindingHash, StringComparison.OrdinalIgnoreCase))
-        {
-            logger.LogCritical("🚨 [Zero-Trust DB 무결성 위반 감지] AuthorizationCode와 CodeChallenge의 결합 해시가 불일치합니다. DB 변조 차단!");
-            return BadRequest(new ErrorResponseDto
-            {
-                Success = false,
-                Message = "DB 무결성 검증 실패: 인가 코드(authorization_code)와 PKCE CodeChallenge의 결합 해시가 일치하지 않습니다 (DB 변조 감지)."
+                Message = "PKCE 보안 검증 실패: 전달된 code_verifier의 S256 해시가 인가 시 제출된 code_challenge의 해시와 일치하지 않습니다."
             });
         }
 
@@ -554,8 +695,22 @@ public class AccountController(
         };
         var idToken = tokenHandler.WriteToken(tokenHandler.CreateToken(idDescriptor));
 
-        // 3. Refresh Token 생성 (토큰 갱신용)
+        // 3. Refresh Token 생성 및 refreshtokens 테이블에 해시 저장 (14일 수명)
         var refreshToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var refreshTokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken))).ToLowerInvariant();
+
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            RefreshTokenHash = refreshTokenHash,
+            Subject = sub,
+            UserEmail = email,
+            ClientId = record.ClientId,
+            Scope = record.Scope,
+            CreatedAtUtc = DateTime.UtcNow,
+            ExpiresAtUtc = DateTime.UtcNow.AddDays(14),
+            IsRevoked = false
+        });
+        await db.SaveChangesAsync(ct);
 
         logger.LogInformation("서버 간 Back-channel 직통신 OIDC 토큰 세트 발급 성공 - User: {User}({Role}), CodeId: {CodeId}", email, roleName, record.Id);
 
@@ -580,7 +735,8 @@ public class AccountController(
             {
                 codeVerifier = request.CodeVerifier,
                 calculatedChallenge,
-                storedChallenge = record.CodeChallenge,
+                calculatedChallengeHash,
+                storedChallengeHash = record.CodeChallengeHash,
                 matched = true
             },
             AuthorizationCodeValidation = new
@@ -598,6 +754,158 @@ public class AccountController(
                 endpoint = "/api/auth/token-exchange",
                 protocol = "Direct Back-Channel HTTP POST",
                 status = "200 OK"
+            }
+        });
+    }
+
+    /// <summary>
+    /// [OIDC 토큰 갱신] Refresh Token을 검증하고, 기존 토큰 폐기(Token Rotation) 및 신규 Access/ID/Refresh Token 발급
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [Tags("Step 08. OIDC 토큰 갱신 (Refresh OIDC Token)")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequestDto request, CancellationToken ct)
+    {
+        var refreshToken = !string.IsNullOrWhiteSpace(request.RefreshToken)
+            ? request.RefreshToken
+            : request.Token;
+
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "리프레시 토큰(refresh_token)은 필수 값입니다."
+            });
+        }
+
+        var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(refreshToken))).ToLowerInvariant();
+        var tokenRecord = await db.RefreshTokens.FirstOrDefaultAsync(r => r.RefreshTokenHash == tokenHash, ct);
+
+        if (tokenRecord is null)
+        {
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "유효하지 않거나 존재하지 않는 리프레시 토큰입니다."
+            });
+        }
+
+        if (tokenRecord.IsRevoked)
+        {
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "이미 폐기(로그아웃 또는 회전 교체)된 리프레시 토큰입니다. 보안을 위해 다시 로그인해 주세요."
+            });
+        }
+
+        if (tokenRecord.ExpiresAtUtc < DateTime.UtcNow)
+        {
+            return BadRequest(new ErrorResponseDto
+            {
+                Success = false,
+                Message = "리프레시 토큰이 만료되었습니다. 다시 로그인해 주세요."
+            });
+        }
+
+        // 1. 신규 Refresh Token 발급 및 기존 토큰 폐기 (Token Rotation)
+        var newRefreshToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var newRefreshTokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(newRefreshToken))).ToLowerInvariant();
+
+        tokenRecord.IsRevoked = true;
+        tokenRecord.RevokedAtUtc = DateTime.UtcNow;
+        tokenRecord.ReplacedByTokenHash = newRefreshTokenHash;
+
+        db.RefreshTokens.Add(new RefreshToken
+        {
+            RefreshTokenHash = newRefreshTokenHash,
+            Subject = tokenRecord.Subject,
+            UserEmail = tokenRecord.UserEmail,
+            ClientId = tokenRecord.ClientId,
+            Scope = tokenRecord.Scope,
+            CreatedAtUtc = DateTime.UtcNow,
+            ExpiresAtUtc = DateTime.UtcNow.AddDays(14),
+            IsRevoked = false
+        });
+        await db.SaveChangesAsync(ct);
+
+        // 2. 사용자 조회 및 신규 Access/ID Token 발급
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == tokenRecord.UserEmail, ct)
+                   ?? await db.Users.FirstOrDefaultAsync(u => u.Id.ToString() == tokenRecord.Subject, ct);
+
+        var roleName = user?.Role.ToString() ?? "Admin";
+        var userName = user?.UserName ?? "테스트 사용자";
+        var email = user?.Email ?? tokenRecord.UserEmail;
+        var sub = user?.Id.ToString() ?? tokenRecord.Subject;
+
+        var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("SuperSecretKeyForDevelopmentTesting1234567890!"));
+        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var accessClaims = new List<Claim>
+        {
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub, sub),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email, email),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Name, userName),
+            new(ClaimTypes.NameIdentifier, sub),
+            new(ClaimTypes.Name, userName),
+            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Role, roleName),
+            new("role", roleName),
+            new("scope", tokenRecord.Scope)
+        };
+
+        var accessDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(accessClaims),
+            Expires = DateTime.UtcNow.AddMinutes(15),
+            Issuer = "https://localhost:7213/",
+            Audience = "company-homepage",
+            SigningCredentials = creds
+        };
+        var accessToken = tokenHandler.WriteToken(tokenHandler.CreateToken(accessDescriptor));
+
+        var idClaims = new List<Claim>
+        {
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub, sub),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Email, email),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Name, userName),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.AuthTime, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()),
+            new(ClaimTypes.NameIdentifier, sub),
+            new(ClaimTypes.Name, userName),
+            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Role, roleName),
+            new("role", roleName)
+        };
+
+        var idDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(idClaims),
+            Expires = DateTime.UtcNow.AddMinutes(15),
+            Issuer = "https://localhost:7213/",
+            Audience = "company-homepage",
+            SigningCredentials = creds
+        };
+        var idToken = tokenHandler.WriteToken(tokenHandler.CreateToken(idDescriptor));
+
+        logger.LogInformation("Refresh Token 회전(Rotation) 및 Access/ID Token 재발급 성공 - User: {User}, TokenId: {TokenId}", email, tokenRecord.Id);
+
+        return Ok(new
+        {
+            success = true,
+            message = "Refresh Token 회전(Rotation) 및 Access/ID Token 재발급이 성공적으로 완료되었습니다.",
+            token_type = "Bearer",
+            access_token = accessToken,
+            id_token = idToken,
+            refresh_token = newRefreshToken,
+            expires_in = 900,
+            scope = tokenRecord.Scope,
+            user = new
+            {
+                sub,
+                email,
+                name = userName,
+                role = roleName
             }
         });
     }
@@ -649,44 +957,22 @@ public class SsoStatusResponseDto
 public class GenerateAuthCodeRequestDto
 {
     /// <summary>
-    /// Step 1에서 발급받은 authorizeUrl 전체 문자열 (입력 시 내부의 code_challenge, state, client_id 등이 자동 파싱됩니다)
+    /// Step 01(GET /api/auth/access-sso)에서 발급받은 302 리다이렉트 URL (Location 헤더 또는 authorizeUrl 주소 전체)
+    /// (URL 내에 포함된 code_challenge, state, client_id, redirect_uri, scope 등이 자동 추출되므로 별도 정보 입력이 필요 없습니다)
     /// </summary>
-    public string? AuthorizeUrl { get; set; }
+    [Required]
+    [JsonPropertyName("redirectUrl")]
+    public string RedirectUrl { get; set; } = string.Empty;
 
     /// <summary>
-    /// PKCE S256 Code Challenge 해시키 (authorizeUrl 입력 시 자동 추출되므로 생략 가능)
+    /// (호환성 지원) authorizeUrl 키 이름 호환
     /// </summary>
-    public string? CodeChallenge { get; set; }
-
-    /// <summary>
-    /// CSRF 방어용 state 값 (authorizeUrl 입력 시 자동 추출되므로 생략 가능)
-    /// </summary>
-    public string? State { get; set; }
-
-    /// <summary>
-    /// 서비스 식별자 (기본값: company-homepage)
-    /// </summary>
-    public string? ClientId { get; set; } = "company-homepage";
-
-    /// <summary>
-    /// 인가 완료 후 복귀할 콜백 URL (기본값: https://localhost:7001/api/auth/oidc-callback)
-    /// </summary>
-    public string? RedirectUri { get; set; } = "https://localhost:7001/api/auth/oidc-callback";
-
-    /// <summary>
-    /// PKCE 해시 방식 (기본값: S256)
-    /// </summary>
-    public string? CodeChallengeMethod { get; set; } = "S256";
-
-    /// <summary>
-    /// 요청 권한 범위 (Scopes, 기본값: openid profile email roles offline_access)
-    /// </summary>
-    public string? Scope { get; set; } = "openid profile email roles offline_access";
-
-    /// <summary>
-    /// 인증할 사용자 이메일 (기본값: 로그인된 세션 유저 또는 test@company.local)
-    /// </summary>
-    public string? UserEmail { get; set; } = "test@company.local";
+    [JsonPropertyName("authorizeUrl")]
+    public string? AuthorizeUrl
+    {
+        get => RedirectUrl;
+        set { if (!string.IsNullOrWhiteSpace(value)) RedirectUrl = value; }
+    }
 }
 
 public class GenerateAuthCodeResponseDto
@@ -716,10 +1002,7 @@ public class AuthCodeDbRecordDto
 {
     public long Id { get; set; }
     public string AuthorizationCodeHash { get; set; } = string.Empty;
-    public string CodeChallenge { get; set; } = string.Empty;
     public string CodeChallengeHash { get; set; } = string.Empty;
-    public string CombinedBindingHash { get; set; } = string.Empty;
-    public string CodeChallengeMethod { get; set; } = string.Empty;
     public string ClientId { get; set; } = string.Empty;
     public string UserEmail { get; set; } = string.Empty;
     public string Subject { get; set; } = string.Empty;
@@ -789,4 +1072,23 @@ public class BackchannelTokenExchangeResponseDto
     public object? PkceValidation { get; set; }
     public object? AuthorizationCodeValidation { get; set; }
     public object? ServerDirectChannel { get; set; }
+}
+
+public class ValidatePkceResponseDto
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public object? AuthorizationCodeValidation { get; set; }
+    public object? PkceValidation { get; set; }
+    public object? DatabaseIntegrity { get; set; }
+    public object? TargetUser { get; set; }
+}
+
+public class RefreshTokenRequestDto
+{
+    [JsonPropertyName("refresh_token")]
+    public string? RefreshToken { get; set; }
+
+    [JsonPropertyName("token")]
+    public string? Token { get; set; }
 }

@@ -18,9 +18,9 @@ public class OidcStateService : IOidcStateService
 
     private string IdpBaseUrl => _configuration["Authentication:Authority"] ?? "https://localhost:7213";
     private string ClientId => _configuration["Authentication:ClientId"] ?? "company-homepage";
-    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
+    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "http://localhost:3000/callback";
 
-    public (string Verifier, string Challenge, string State, string AuthorizeUrl) GenerateAndStorePkce(HttpContext context, string? returnUrl = null)
+    public (string Verifier, string Challenge, string State, string AuthorizeUrl) GenerateAndStorePkce(HttpContext context, string? returnUrl = null, string? targetService = null)
     {
         var bytes = new byte[32];
         using (var rng = RandomNumberGenerator.Create())
@@ -42,6 +42,22 @@ public class OidcStateService : IOidcStateService
             {
                 context.Session.SetString("return_url", returnUrl);
             }
+
+            // 요청된 위치에 따른 대상 서비스 식별 (SSO 로그인 버튼 클릭 시: none -> 쿠키 미발급)
+            var determinedService = targetService;
+            if (string.IsNullOrWhiteSpace(determinedService) && !string.IsNullOrWhiteSpace(returnUrl))
+            {
+                if (returnUrl.Contains("/about", StringComparison.OrdinalIgnoreCase)) determinedService = "about";
+                else if (returnUrl.Contains("/service", StringComparison.OrdinalIgnoreCase)) determinedService = "service";
+                else if (returnUrl.Contains("/history", StringComparison.OrdinalIgnoreCase)) determinedService = "history";
+                else determinedService = "none";
+            }
+            if (string.IsNullOrWhiteSpace(determinedService))
+            {
+                determinedService = "none";
+            }
+
+            context.Session.SetString("target_service", determinedService.ToLowerInvariant());
 
             var scope = Uri.EscapeDataString("openid profile email roles offline_access");
             var targetRedirectUri = Uri.EscapeDataString(DefaultRedirectUri);
@@ -72,5 +88,6 @@ public class OidcStateService : IOidcStateService
         context.Session.Remove("pkce_verifier");
         context.Session.Remove("oauth_state");
         context.Session.Remove("return_url");
+        context.Session.Remove("target_service");
     }
 }

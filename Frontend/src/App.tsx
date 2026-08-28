@@ -8,6 +8,7 @@ import { AboutPage } from './pages/AboutPage';
 import { ServicePage } from './pages/ServicePage';
 import { HistoryPage } from './pages/HistoryPage';
 import { LoginPage } from './pages/LoginPage';
+import { CallbackPage } from './pages/CallbackPage';
 import { ToastContainer } from './components/ToastContainer';
 
 export const App: React.FC = () => {
@@ -109,7 +110,7 @@ export const App: React.FC = () => {
   }, [checkAuth, loadAll, addLog]);
 
   const handleStartSso = () => {
-    addLog('AUTH', `[SSO 시작] ServiceServer Step 1 (/api/auth/start-sso) 호출 및 AuthServer 인가 페이지로 이동`);
+    addLog('AUTH', `[SSO 시작] ServiceServer Step 01 (/api/auth/access-sso) 호출 및 AuthServer 인가 페이지로 이동`);
     api.startSso(window.location.href);
   };
 
@@ -295,6 +296,14 @@ export const App: React.FC = () => {
           <Route
             path="/login"
             element={<LoginPage />}
+          />
+          <Route
+            path="/callback"
+            element={<CallbackPage />}
+          />
+          <Route
+            path="/signin-oidc"
+            element={<CallbackPage />}
           />
         </Routes>
 

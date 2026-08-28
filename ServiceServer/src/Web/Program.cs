@@ -5,6 +5,12 @@ using Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestHeadersTotalSize = 65536; // 64KB
+    serverOptions.Limits.MaxRequestBufferSize = 1048576;     // 1MB
+});
+
 // 1. DI 서비스 등록 (Clean Architecture 4계층 구조)
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -20,6 +26,8 @@ app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "ServiceServer API v1");
     c.RoutePrefix = "swagger";
+    c.ConfigObject.AdditionalItems["tagsSorter"] = "alpha";
+    c.ConfigObject.AdditionalItems["operationsSorter"] = "alpha";
 });
 
 app.UseCors("AllowAll");

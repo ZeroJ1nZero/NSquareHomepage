@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { CurrentUser, LogEntry, ServiceData } from '../types';
 import { PermissionBanner } from '../components/PermissionBanner';
 import { Inspector } from '../components/Inspector';
-import { checkAdminPermission } from '../utils/authUtils';
+import { checkServicePermission } from '../utils/authUtils';
 
 interface ServicePageProps {
   user: CurrentUser;
@@ -35,11 +35,10 @@ export const ServicePage: React.FC<ServicePageProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   const handleStartEdit = () => {
-    // 🛡️ 권한 검사 수행
-    const hasPermission = checkAdminPermission(
+    // 🛡️ 주요 서비스 세션 쿠키 권한 검사 수행 (미보유 시 302 리다이렉트를 통한 SSO 쿠키 확인 & 세션 발급)
+    const hasPermission = checkServicePermission(
       user,
-      onOpenLogin,
-      showToast,
+      'service',
       addLog,
       '주요 서비스 수정'
     );
@@ -58,10 +57,9 @@ export const ServicePage: React.FC<ServicePageProps> = ({
 
   const handleSave = async () => {
     // 🛡️ 저장 전 권한 재검증
-    const hasPermission = checkAdminPermission(
+    const hasPermission = checkServicePermission(
       user,
-      onOpenLogin,
-      showToast,
+      'service',
       addLog,
       '서비스 저장'
     );
@@ -101,7 +99,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
         </div>
 
         {/* Permission Check Banner */}
-        <PermissionBanner user={user} pageName="주요 서비스 관리" onOpenLogin={onOpenLogin} />
+        <PermissionBanner user={user} pageName="주요 서비스" serviceKey="service" onOpenLogin={onOpenLogin} />
 
         <div className="content-grid" style={{ marginTop: '24px' }}>
           <div className="data-column">

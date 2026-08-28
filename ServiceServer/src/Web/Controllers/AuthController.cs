@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
@@ -43,44 +44,29 @@ public class AuthController : ControllerBase
         _logger = logger;
     }
 
-    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "https://localhost:7001/api/auth/oidc-callback";
+    private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "http://localhost:3000/callback";
 
     /// <summary>
-    /// [SSO 시작 및 PKCE/CSRF 키 생성] 서비스 세션 쿠키 검증 및 미보유 시 인증 서버(IdP) 인가 주소와 PKCE/CSRF 키 반환
+    /// [PKCE/CSRF 키 발급 및 302 리다이렉트 생성] 서비스 세션 쿠키 검증 및 미보유 시 인증 서버(IdP) 인가 주소와 PKCE/CSRF 키 반환 및 302 리다이렉트
     /// </summary>
     /// <remarks>
     /// 1. 암호학적 난수로 **PKCE 원본키(`pkce_verifier`)**, **해시키(`code_challenge`)**, **CSRF 검증키(`state`)**를 생성합니다.
-    /// 2. 서비스 서버 세션 메모리에 `pkce_verifier`와 `oauth_state`를 안전하게 저장합니다.
-    /// 3. 클라이언트(Swagger UI/SPA)에게 인증 서버로 이동할 **`authorizeUrl` 및 파라미터 일체**를 JSON(200 OK)으로 반환합니다.
+    /// 2. 서비스 서버 세션 메모리에 `pkce_verifier`와 `oauth_state`, 그리고 요청된 `target_service`를 안전하게 저장합니다.
+    /// 3. 클라이언트에게 인증 서버로 이동할 **`authorizeUrl` 및 파라미터 일체**를 반환하거나 302 리다이렉트합니다.
     /// </remarks>
     /// <param name="returnUrl">로그인 완료 후 최종 복귀할 페이지 주소 (기본: /)</param>
-    /// <param name="autoRedirect">브라우저 자동 302 리다이렉트 여부 (기본: false, Swagger UI 확인 시 JSON 200 OK 반환)</param>
-    [HttpGet("api/auth/start-sso")]
-    [Tags("Step 1. SSO 시작 & PKCE/CSRF 키 발급 (Initiate SSO)")]
+    /// <param name="service">대상 서비스 식별자 (about, service, history, 또는 SSO 로그인 버튼 클릭 시 none)</param>
+    /// <param name="autoRedirect">브라우저 자동 302 리다이렉트 여부 (기본: false)</param>
+    [HttpGet("api/auth/access-sso")]
+    [Tags("Step 01. PKCE/CSRF 키 발급 및 302 리다이렉트 생성 (Initiate SSO)")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(StartSsoResultDto), StatusCodes.Status200OK)]
-    public IActionResult StartSso([FromQuery] string? returnUrl = null, [FromQuery] bool autoRedirect = false)
+    public IActionResult StartSso([FromQuery] string? returnUrl = null, [FromQuery] string? service = null, [FromQuery] bool autoRedirect = false)
     {
-        if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
-        {
-            var targetReturn = returnUrl ?? "/";
-            if (autoRedirect)
-            {
-                return Redirect(targetReturn);
-            }
-            return Ok(new
-            {
-                success = true,
-                isAuthenticated = true,
-                message = "이미 유효한 서비스 세션 쿠키(.NsqHomepage.ServiceSession)를 보유하고 있습니다.",
-                userName = User.Identity?.Name,
-                role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Admin"
-            });
-        }
+        var targetReturn = returnUrl ?? "/";
+        var result = _initiateSsoUseCase.Execute(HttpContext, targetReturn, service);
 
-        var result = _initiateSsoUseCase.Execute(HttpContext, returnUrl);
-
-        _logger.LogInformation("SSO 로그인 요청 생성 완료 - State: {State}, CodeChallenge: {Challenge}, AuthorizeUrl: {Url}", result.State, result.CodeChallenge, result.AuthorizeUrl);
+        _logger.LogInformation("SSO 로그인 요청 생성 완료 - Service: {Service}, State: {State}, CodeChallenge: {Challenge}, AuthorizeUrl: {Url}", service ?? "auto", result.State, result.CodeChallenge, result.AuthorizeUrl);
 
         Response.Headers.Location = result.AuthorizeUrl;
         if (autoRedirect)
@@ -91,81 +77,43 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+
+
     /// <summary>
-    /// [OIDC 콜백 처리 및 세션 쿠키 발급] 토큰 발급 수신 완료 후 클라이언트에 서비스 세션 쿠키 발급 및 복귀
+    /// [위치별 서비스 세션 쿠키 발급] 인증 서버(IdP)에서 발급받은 Access Token, ID Token, Refresh Token을 수신하여 위치(About, Service, History)에 맞는 서비스 세션 쿠키 발급
     /// </summary>
     /// <remarks>
-    /// 1. 인가 코드(`code`)와 CSRF 검증키(`state`)를 수신합니다.
-    /// 2. 인증 서버(`POST :7213/connect/token`)와 백채널 통신하여 Access/Refresh Token을 발급받습니다.
-    /// 3. 발급받은 토큰을 서비스 서버 세션 메모리에 보관하고, 브라우저에 `.NsqHomepage.ServiceSession` 쿠키를 발급합니다.
+    /// 1. 인증 서버(IdP)의 Step 07에서 발급된 **`access_token`, `id_token`, `refresh_token`**을 JSON Body로 수신하여 JWT 클레임(신원/역할)을 파싱합니다.
+    /// 2. 서비스 서버 세션 메모리에 토큰 세트와 사용자 정보를 안전하게 보관합니다.
+    /// 3. 요청된 위치(`service`: about, service, history, 또는 default)에 맞는 서비스 세션 쿠키(`.Nsq.About.Session`, `.Nsq.Service.Session`, `.Nsq.History.Session`, `.NsqHomepage.ServiceSession`)를 발급합니다.
     /// </remarks>
-    /// <param name="code">인증 서버가 발급한 일회용 인가 코드</param>
-    /// <param name="state">CSRF 방어용 state 값 (서비스 서버 세션과 일치해야 함)</param>
-    /// <param name="error">인증 서버 에러 코드 (있을 경우)</param>
-    /// <param name="error_description">인증 서버 에러 상세 설명</param>
+    /// <param name="request">Access Token, ID Token, Refresh Token, 대상 서비스 위치 DTO</param>
+    /// <param name="service">대상 서비스 위치 (쿼리로 전달 시)</param>
     /// <param name="cancellationToken">취소 토큰</param>
-    [HttpGet("api/auth/oidc-callback")]
-    [Tags("Step 7. 서비스 세션 쿠키 발급 및 OIDC 콜백 (Issue .NsqHomepage.ServiceSession Cookie)")]
+    [HttpPost("api/auth/oidc-callback")]
+    [Tags("Step 08. 위치별 서비스 세션 쿠키 발급 (Issue Per-Service Session Cookie)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> SigninOidcGet(
-        [FromQuery] string? code,
-        [FromQuery] string? state,
-        [FromQuery] string? error,
-        [FromQuery] string? error_description,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> IssueServiceSessionCookie(
+        [FromBody] IssueSessionRequestDto? request = null,
+        [FromQuery] string? service = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(error))
-        {
-            _logger.LogError("IdP 인증 실패: {Error} - {Description}", error, error_description);
-            return BadRequest(new { success = false, error, error_description });
-        }
+        var effAccessToken = request?.AccessToken ?? HttpContext.Session.GetString("access_token");
+        var effIdToken = request?.IdToken ?? HttpContext.Session.GetString("id_token");
+        var effRefreshToken = request?.RefreshToken ?? HttpContext.Session.GetString("refresh_token");
+        var effService = request?.Service ?? service ?? HttpContext.Session.GetString("target_service");
 
-        if (string.IsNullOrWhiteSpace(code))
+        if (string.IsNullOrWhiteSpace(effAccessToken) && string.IsNullOrWhiteSpace(effIdToken))
         {
-            return BadRequest(new { success = false, message = "인가 코드(code)가 제공되지 않았습니다." });
-        }
-
-        // [CSRF 검증] state 파라미터가 서비스 서버 세션(oauth_state)에 저장된 값과 일치하는지 확인
-        if (!_oidcStateService.ValidateCsrfState(HttpContext, state))
-        {
-            _logger.LogWarning("CSRF 검증 실패: 전달된 state({State})가 서비스 서버 세션에 저장된 state와 일치하지 않거나 세션이 만료되었습니다.", state);
             return BadRequest(new
             {
                 success = false,
-                error = "csrf_validation_failed",
-                message = "CSRF 보안 검증 실패: state 파라미터가 서비스 서버 세션에 저장된 값과 일치하지 않거나 세션이 만료되었습니다.",
-                incomingState = state,
-                stateMatched = false
+                message = "인증 서버(IdP)로부터 발급받은 Access Token 또는 ID Token이 필요합니다. request body에 토큰을 전달해 주세요."
             });
         }
 
-        _logger.LogInformation("CSRF state 검증 성공 - State: {State}", state);
-
-        // [PKCE Verifier 추출] 세션에 보관된 PKCE 원본키(code_verifier) 추출
-        var verifier = _oidcStateService.GetStoredVerifier(HttpContext);
-        if (string.IsNullOrWhiteSpace(verifier))
-        {
-            _logger.LogWarning("세션 내 PKCE 원본키(code_verifier)를 찾을 수 없습니다.");
-            return BadRequest(new
-            {
-                success = false,
-                error = "missing_pkce_verifier",
-                message = "세션이 만료되었거나 PKCE 원본키가 존재하지 않습니다. 다시 로그인을 시도해 주세요."
-            });
-        }
-
-        // [Back-Channel 토큰 교환]
-        var result = await _tokenExchangeService.ExchangeCodeForTokensAsync(code, verifier, DefaultRedirectUri, cancellationToken);
-        if (!result.IsSuccess)
-        {
-            _logger.LogError("Back-channel 토큰 교환 실패: {Content}", result.ResponseContent);
-            return StatusCode(400, JsonSerializer.Deserialize<object>(result.ResponseContent));
-        }
-
-        // 서비스 세션 쿠키 발급
-        await IssueServiceSessionCookieAsync(result);
+        var cookieResult = await IssueServiceSessionCookieInternalAsync(effAccessToken ?? "", effRefreshToken, effService, null, effIdToken);
 
         var returnUrl = HttpContext.Session.GetString("return_url") ?? "http://localhost:3000/";
         if (!returnUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
@@ -174,43 +122,41 @@ public class AuthController : ControllerBase
             returnUrl = $"http://localhost:3000{returnUrl}";
         }
 
-        // 세션 클린업
         _oidcStateService.ClearSession(HttpContext);
 
-        if (Request.Headers.Accept.ToString().Contains("text/html") || Request.Query.ContainsKey("code"))
-        {
-            return Redirect(returnUrl);
-        }
-
+        var hasCookie = !string.IsNullOrWhiteSpace(cookieResult.CookieName);
         return Ok(new
         {
             success = true,
-            message = "서비스 세션 쿠키(.NsqHomepage.ServiceSession) 발급 및 최종 인증 완료",
+            message = hasCookie
+                ? $"위치({effService})에 맞는 서비스 세션 쿠키({cookieResult.CookieName})가 성공적으로 발급되었습니다."
+                : "전역 SSO 인증이 완료되었으며 세션 메모리에 토큰이 보관되었습니다. (서비스 세션 쿠키 미발급)",
             sessionCookie = new
             {
-                name = ".NsqHomepage.ServiceSession",
-                isIssued = true,
-                httpOnly = true,
-                secure = true,
-                sameSite = "Lax",
-                expiresInMinutes = 15
+                name = cookieResult.CookieName,
+                scheme = cookieResult.Scheme,
+                service = effService ?? "none",
+                isIssued = hasCookie,
+                httpOnly = hasCookie,
+                secure = hasCookie,
+                sameSite = hasCookie ? "None" : null,
+                expiresInMinutes = hasCookie ? 15 : 0
             },
             sessionMemory = new
             {
                 isStored = true,
                 storageType = "DistributedMemoryCache (ISession)",
-                storedTokens = new[] { "access_token", "id_token", "refresh_token" }
+                storedTokens = new[] { "access_token", "id_token", "refresh_token" },
+                targetService = effService
             },
             user = new
             {
-                sub = result.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value,
-                email = result.Claims.FirstOrDefault(c => c.Type == "email" || c.Type == ClaimTypes.Email)?.Value,
-                name = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value,
-                role = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value,
+                sub = cookieResult.Sub,
+                email = cookieResult.Email,
+                name = cookieResult.Name,
+                role = cookieResult.Role,
                 isAuthenticated = true
             },
-            stateValidated = true,
-            tokens = result.RootElement,
             redirectUrl = returnUrl
         });
     }
@@ -220,7 +166,7 @@ public class AuthController : ControllerBase
     /// </summary>
     /// <param name="state">검증할 state 값 (생략 시 세션에 저장된 oauth_state 값으로 자동 검증)</param>
     [HttpGet("api/auth/verify-state")]
-    [Tags("Step 5. CSRF State 일치 검증 (Verify CSRF State)")]
+    [Tags("Step 05. CSRF State 일치 검증 (Verify CSRF State)")]
     [ProducesResponseType(typeof(VerifyStateResultDto), StatusCodes.Status200OK)]
     public IActionResult VerifyState([FromQuery] string? state = null)
     {
@@ -233,13 +179,13 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// [서버 직통신 토큰 교환] 인가 코드 및 PKCE 원본키(code_verifier) Back-channel 토큰 교환 (Access/Refresh Token 수신)
+    /// [서버 간 PKCE 토큰 교환 검증] 인가 코드 및 PKCE 원본키(code_verifier) Back-channel 토큰 교환 (Access/Refresh Token 수신)
     /// </summary>
     /// <remarks>
     /// 서비스 서버(:7001)가 인증 서버(:7213)로 인가 코드와 PKCE 원본키를 백채널 직통신으로 전송하여 Access Token과 Refresh Token을 발급받고 세션을 갱신합니다.
     /// </remarks>
-    [HttpPost("api/auth/backchannel-token-exchange")]
-    [Tags("Step 6. Back-Channel 직통신 토큰 교환 (Access/Refresh Token 수신)")]
+    [HttpPost("api/auth/validate-pkce")]
+    [Tags("Step 06. 서버 간 PKCE 토큰 교환 검증 (Server-to-Server PKCE Token Exchange Validation)")]
     public async Task<IActionResult> BackchannelTokenExchange([FromBody] BackchannelExchangeDto request, CancellationToken cancellationToken)
     {
         var result = await _exchangeTokenUseCase.ExecuteAsync(request.Code, request.CodeVerifier, request.RedirectUri, HttpContext, cancellationToken);
@@ -294,51 +240,71 @@ public class AuthController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// [세션 쿠키 기반 사용자 신원/권한 확인] 클라이언트가 제출한 서비스 세션 쿠키의 유효성 및 사용자 정보(Role, Email, Name) 확인
+    /// </summary>
+    /// <remarks>
+    /// 브라우저가 전송한 서비스 세션 쿠키 또는 서버 세션 메모리를 검증하여 현재 활성화된 세션 및 사용자 정보(Role, Email, Name)를 반환합니다.
+    /// </remarks>
     [HttpGet("api/auth/user-identity")]
-    [HttpGet("api/auth/me")]
-    [Tags("Step 9. 세션 쿠키 기반 사용자 신원/권한 확인 (Check User Identity)")]
-    public IActionResult GetCurrentUser()
+    [Tags("Step 09. 세션 쿠키 기반 사용자 신원/권한 확인 (User Identity)")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserIdentity()
     {
-        if (User.Identity?.IsAuthenticated == true)
+        var authAbout = await HttpContext.AuthenticateAsync("Cookie_About");
+        var authService = await HttpContext.AuthenticateAsync("Cookie_Service");
+        var authHistory = await HttpContext.AuthenticateAsync("Cookie_History");
+
+        var activePrincipal = authAbout.Principal ?? authService.Principal ?? authHistory.Principal;
+        var hasCookieAuth = authAbout.Succeeded || authService.Succeeded || authHistory.Succeeded;
+
+        var sessionEmail = HttpContext.Session.GetString("user_email");
+        var sessionName = HttpContext.Session.GetString("user_name");
+        var sessionRole = HttpContext.Session.GetString("user_role");
+        var sessionSub = HttpContext.Session.GetString("user_sub");
+        var hasSessionUser = !string.IsNullOrWhiteSpace(sessionEmail);
+
+        if ((hasCookieAuth && activePrincipal?.Identity?.IsAuthenticated == true) || hasSessionUser)
         {
-            var claims = User.Claims.Select(c => new { c.Type, c.Value });
-            var userName = User.Identity?.Name ?? User.FindFirst(ClaimTypes.Name)?.Value ?? User.FindFirst(ClaimTypes.Email)?.Value;
-            var role = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value ?? "Admin";
-            var email = User.FindFirst(ClaimTypes.Email)?.Value ?? HttpContext.Session.GetString("user_email");
+            var userName = activePrincipal?.Identity?.Name ?? activePrincipal?.FindFirst(ClaimTypes.Name)?.Value ?? activePrincipal?.FindFirst(ClaimTypes.Email)?.Value ?? sessionName ?? "관리자";
+            var role = activePrincipal?.FindFirst(ClaimTypes.Role)?.Value ?? sessionRole ?? "Admin";
+            var email = activePrincipal?.FindFirst(ClaimTypes.Email)?.Value ?? sessionEmail ?? "admin@company.local";
+            var sub = activePrincipal?.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? sessionSub ?? "1";
 
             return Ok(new
             {
                 isAuthenticated = true,
-                authenticationType = User.Identity?.AuthenticationType ?? "Cookie",
+                message = hasCookieAuth ? "유효한 서비스 세션 쿠키가 확인되었습니다." : "전역 세션 인증 상태가 확인되었습니다.",
+                user = new
+                {
+                    sub,
+                    userName,
+                    email,
+                    role
+                },
                 userName,
                 role,
                 email,
-                claims
-            });
-        }
-
-        var sessionSub = HttpContext.Session.GetString("user_sub");
-        if (!string.IsNullOrWhiteSpace(sessionSub))
-        {
-            return Ok(new
-            {
-                isAuthenticated = true,
-                authenticationType = "SessionMemory",
-                userName = HttpContext.Session.GetString("user_name"),
-                role = HttpContext.Session.GetString("user_role") ?? "Admin",
-                email = HttpContext.Session.GetString("user_email"),
-                claims = Array.Empty<object>()
+                activeSessions = new
+                {
+                    about = authAbout.Succeeded,
+                    service = authService.Succeeded,
+                    history = authHistory.Succeeded
+                }
             });
         }
 
         return Ok(new
         {
             isAuthenticated = false,
-            authenticationType = (string?)null,
-            userName = (string?)null,
-            role = (string?)null,
-            email = (string?)null,
-            claims = Array.Empty<object>()
+            message = "유효한 서비스 세션 쿠키가 존재하지 않습니다.",
+            user = (object?)null,
+            activeSessions = new
+            {
+                about = false,
+                service = false,
+                history = false
+            }
         });
     }
 
@@ -346,7 +312,7 @@ public class AuthController : ControllerBase
     /// Refresh Token을 이용하여 Access Token 재발급 및 세션 갱신
     /// </summary>
     [HttpPost("api/auth/refresh")]
-    [Tags("Step 11. 서비스 세션 로그아웃 & 토큰 갱신 (Session Management)")]
+    [Tags("로그아웃, 토큰 확인 및 갱신")]
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     public async Task<IActionResult> RefreshToken(CancellationToken cancellationToken)
     {
@@ -388,7 +354,7 @@ public class AuthController : ControllerBase
     /// 서비스 서버의 세션 메모리에 보관된 `access_token`, `id_token`, `refresh_token` 및 유효기간을 실시간으로 확인합니다.
     /// </remarks>
     [HttpGet("api/auth/session-tokens")]
-    [Tags("Step 8. 세션 메모리 보관 토큰 확인 (Inspect Session Tokens)")]
+    [Tags("로그아웃, 토큰 확인 및 갱신")]
     public IActionResult GetSessionTokens()
     {
         var accessToken = HttpContext.Session.GetString("access_token");
@@ -430,55 +396,152 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// [세션 종료] 서비스 세션 파기 및 전역 SSO 로그아웃 URL 반환/리다이렉트
+    /// [세션 종료] 모든 서비스 세션 쿠키 파기 및 전역 SSO 로그아웃 URL 반환 (OWASP 보안 표준 POST 전용)
     /// </summary>
-    [HttpGet("api/auth/logout"), HttpPost("api/auth/logout")]
-    [Tags("Step 11. 서비스 세션 로그아웃 & 토큰 갱신 (Session Management)")]
+    /// <remarks>
+    /// Logout-CSRF 공격 방어를 위해 POST 요청만 허용하며, 발급된 모든 서비스 세션 쿠키(.Nsq.About.Session, .Nsq.Service.Session, .Nsq.History.Session)를 파기하고 전역 SSO 로그아웃 URL을 반환합니다.
+    /// </remarks>
+    [HttpPost("api/auth/logout")]
+    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout([FromQuery] string? returnUrl = null)
     {
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        Response.Cookies.Delete(".NsqHomepage.ServiceSession");
-        _oidcStateService.ClearSession(HttpContext);
-        HttpContext.Session.Remove("access_token");
-        HttpContext.Session.Remove("id_token");
-        HttpContext.Session.Remove("refresh_token");
-        HttpContext.Session.Remove("user_sub");
-        HttpContext.Session.Remove("user_email");
-        HttpContext.Session.Remove("user_name");
-        HttpContext.Session.Remove("user_role");
+        await HttpContext.SignOutAsync("Cookie_About");
+        await HttpContext.SignOutAsync("Cookie_Service");
+        await HttpContext.SignOutAsync("Cookie_History");
 
-        var targetReturnUrl = returnUrl ?? Request.Headers.Referer.ToString();
+        var cookieOptions = new CookieOptions
+        {
+            Path = "/",
+            Secure = true,
+            SameSite = SameSiteMode.None,
+            Expires = DateTimeOffset.UtcNow.AddDays(-1)
+        };
+
+        Response.Cookies.Delete(".Nsq.About.Session", cookieOptions);
+        Response.Cookies.Delete(".Nsq.Service.Session", cookieOptions);
+        Response.Cookies.Delete(".Nsq.History.Session", cookieOptions);
+        Response.Cookies.Delete(".NsqHomepage.SessionData", cookieOptions);
+        Response.Cookies.Delete(".NsqHomepage.ServiceSession", cookieOptions);
+
+        Response.Cookies.Delete(".Nsq.About.Session");
+        Response.Cookies.Delete(".Nsq.Service.Session");
+        Response.Cookies.Delete(".Nsq.History.Session");
+        Response.Cookies.Delete(".NsqHomepage.SessionData");
+        Response.Cookies.Delete(".NsqHomepage.ServiceSession");
+
+        _oidcStateService.ClearSession(HttpContext);
+        HttpContext.Session.Clear();
+
+        var targetReturnUrl = returnUrl;
         if (string.IsNullOrWhiteSpace(targetReturnUrl))
         {
             targetReturnUrl = "http://localhost:3000/";
         }
 
-        var authServerLogoutUrl = $"https://localhost:7213/connect/logout?post_logout_redirect_uri={Uri.EscapeDataString(targetReturnUrl)}";
-
-        if (Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
-        {
-            return Redirect(authServerLogoutUrl);
-        }
+        var authServerLogoutUrl = $"https://localhost:7213/api/auth/logout?post_logout_redirect_uri={Uri.EscapeDataString(targetReturnUrl)}";
 
         return Ok(new
         {
             success = true,
             logoutUrl = authServerLogoutUrl,
-            message = "서비스 세션 쿠키(.NsqHomepage.ServiceSession) 및 세션 메모리 토큰이 성공적으로 파기되었습니다."
+            message = "모든 서비스 세션 쿠키 및 세션 메모리 토큰이 성공적으로 파기되었습니다."
         });
     }
 
-    private async Task IssueServiceSessionCookieAsync(TokenExchangeResultDto result)
+    /// <summary>
+    /// [로컬 세션 로그아웃] SSO 쿠키를 유지한 채 서비스 세션 쿠키만 파기 (Keep SSO Cookie)
+    /// </summary>
+    /// <remarks>
+    /// 인증 서버(IdP)의 전역 SSO 세션 쿠키(`AuthServer_SSO_Cookie`)는 그대로 유지하면서,
+    /// 서비스 서버의 작업 세션 쿠키(`.Nsq.About.Session`, `.Nsq.Service.Session`, `.Nsq.History.Session`) 및 세션 메모리만 파기합니다.
+    /// 
+    /// **[특징]**
+    /// - AuthServer 전역 로그아웃을 수행하지 않으므로 SSO 쿠키가 보존됩니다.
+    /// - 이후 서비스 재접근 시 로그인 화면 없이 즉시 Silent SSO로 새로운 세션 쿠키를 발급받을 수 있습니다.
+    /// </remarks>
+    [HttpPost("api/auth/local-logout")]
+    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> LocalLogout([FromQuery] string? returnUrl = null)
     {
-        var claims = new List<Claim>(result.Claims);
+        await HttpContext.SignOutAsync("Cookie_About");
+        await HttpContext.SignOutAsync("Cookie_Service");
+        await HttpContext.SignOutAsync("Cookie_History");
+
+        Response.Cookies.Delete(".Nsq.About.Session");
+        Response.Cookies.Delete(".Nsq.Service.Session");
+        Response.Cookies.Delete(".Nsq.History.Session");
+
+        _oidcStateService.ClearSession(HttpContext);
+        HttpContext.Session.Clear();
+
+        var targetReturnUrl = string.IsNullOrWhiteSpace(returnUrl) ? "http://localhost:3000/" : returnUrl;
+
+        _logger.LogInformation("로컬 서비스 세션 쿠키 파기 완료 (AuthServer_SSO_Cookie 유지)");
+
+        return Ok(new
+        {
+            success = true,
+            ssoCookiePreserved = true,
+            message = "서비스 세션 쿠키(.Nsq.*.Session) 및 메모리가 성공적으로 파기되었으며, 전역 SSO 쿠키(AuthServer_SSO_Cookie)는 유지됩니다.",
+            deletedCookies = new[] { ".Nsq.About.Session", ".Nsq.Service.Session", ".Nsq.History.Session" },
+            redirectUrl = targetReturnUrl
+        });
+    }
+
+    private async Task<(string? CookieName, string? Scheme, ClaimsPrincipal Principal, string? Sub, string? Email, string? Name, string? Role)> IssueServiceSessionCookieInternalAsync(
+        string accessToken,
+        string? refreshToken,
+        string? targetService,
+        List<Claim>? initialClaims = null,
+        string? idToken = null)
+    {
+        var claims = new List<Claim>();
+        if (initialClaims != null)
+        {
+            claims.AddRange(initialClaims);
+        }
+
+        var handler = new JwtSecurityTokenHandler();
+
+        // 1. OIDC ID Token으로부터 사용자 신원 클레임(sub, name, email, role 등) 파싱
+        if (!string.IsNullOrWhiteSpace(idToken) && handler.CanReadToken(idToken))
+        {
+            var idJwt = handler.ReadJwtToken(idToken);
+            foreach (var c in idJwt.Claims)
+            {
+                if (!claims.Any(existing => existing.Type == c.Type))
+                {
+                    claims.Add(c);
+                }
+            }
+        }
+
+        // 2. Access Token으로부터 권한 및 추가 클레임 파싱
+        if (!string.IsNullOrWhiteSpace(accessToken) && handler.CanReadToken(accessToken))
+        {
+            var jwt = handler.ReadJwtToken(accessToken);
+            foreach (var c in jwt.Claims)
+            {
+                if (!claims.Any(existing => existing.Type == c.Type))
+                {
+                    claims.Add(c);
+                }
+            }
+        }
 
         var sub = claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value
+                  ?? HttpContext.Session.GetString("user_sub")
                   ?? User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "1";
         var name = claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value
+                   ?? HttpContext.Session.GetString("user_name")
                    ?? User.Identity?.Name ?? "User";
         var email = claims.FirstOrDefault(c => c.Type == "email" || c.Type == ClaimTypes.Email)?.Value
+                    ?? HttpContext.Session.GetString("user_email")
                     ?? User.FindFirstValue(ClaimTypes.Email) ?? "user@company.local";
         var role = claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value
+                   ?? HttpContext.Session.GetString("user_role")
                    ?? User.FindFirstValue(ClaimTypes.Role) ?? "Admin";
 
         if (!claims.Any(c => c.Type == ClaimTypes.NameIdentifier))
@@ -493,57 +556,138 @@ public class AuthController : ControllerBase
         if (!claims.Any(c => c.Type == ClaimTypes.Role))
             claims.Add(new Claim(ClaimTypes.Role, role));
 
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, ClaimTypes.Name, ClaimTypes.Role);
-        var principal = new ClaimsPrincipal(identity);
-
-        var accessToken = (result.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() : null)
-                          ?? (result.RootElement.TryGetProperty("accessToken", out var at2) ? at2.GetString() : null);
-        var idToken = (result.RootElement.TryGetProperty("id_token", out var it) ? it.GetString() : null)
-                      ?? (result.RootElement.TryGetProperty("idToken", out var it2) ? it2.GetString() : null);
-        var refreshToken = (result.RootElement.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null)
-                           ?? (result.RootElement.TryGetProperty("refreshToken", out var rt2) ? rt2.GetString() : null);
-        var tokenType = (result.RootElement.TryGetProperty("token_type", out var tt) ? tt.GetString() : null)
-                        ?? (result.RootElement.TryGetProperty("tokenType", out var tt2) ? tt2.GetString() : null)
-                        ?? "Bearer";
-        var expiresIn = (result.RootElement.TryGetProperty("expires_in", out var ei) ? ei.GetInt32() : (int?)null)
-                        ?? (result.RootElement.TryGetProperty("expiresIn", out var ei2) ? ei2.GetInt32() : (int?)null)
-                        ?? 900;
-
-        if (string.IsNullOrWhiteSpace(refreshToken))
-        {
-            refreshToken = await HttpContext.GetTokenAsync("refresh_token");
-        }
-
-        // 🌟 [핵심 요구사항] 서비스 서버 세션 메모리(ISession)에 OIDC 토큰 세트 보관
+        // 🌟 [핵심] 서비스 서버 세션 메모리(ISession)에 OIDC 토큰 세트 및 유저 정보 보관
         HttpContext.Session.SetString("access_token", accessToken ?? "");
-        HttpContext.Session.SetString("id_token", idToken ?? "");
-        HttpContext.Session.SetString("refresh_token", refreshToken ?? "");
-        HttpContext.Session.SetString("token_type", tokenType ?? "Bearer");
-        HttpContext.Session.SetInt32("expires_in", expiresIn);
+        if (!string.IsNullOrWhiteSpace(idToken))
+        {
+            HttpContext.Session.SetString("id_token", idToken);
+        }
+        if (!string.IsNullOrWhiteSpace(refreshToken))
+        {
+            HttpContext.Session.SetString("refresh_token", refreshToken);
+        }
+        HttpContext.Session.SetString("token_type", "Bearer");
+        HttpContext.Session.SetInt32("expires_in", 900);
         HttpContext.Session.SetString("token_stored_at_utc", DateTime.UtcNow.ToString("O"));
         HttpContext.Session.SetString("user_sub", sub);
         HttpContext.Session.SetString("user_email", email);
         HttpContext.Session.SetString("user_name", name);
         HttpContext.Session.SetString("user_role", role);
 
-        var authProperties = new AuthenticationProperties
+        var finalService = targetService ?? HttpContext.Session.GetString("target_service");
+
+        // 🌟 요청 위치(target_service)에 맞는 서비스 세션 쿠키 발급 (about, service, history 전용)
+        string? schemeToSignIn = null;
+        string? cookieName = null;
+
+        switch (finalService?.ToLowerInvariant())
         {
-            IsPersistent = true,
-            ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(15)
-        };
-        if (!string.IsNullOrWhiteSpace(accessToken))
-        {
-            authProperties.StoreTokens(new[]
-            {
-                new AuthenticationToken { Name = "access_token", Value = accessToken },
-                new AuthenticationToken { Name = "id_token", Value = idToken ?? "" },
-                new AuthenticationToken { Name = "refresh_token", Value = refreshToken ?? "" }
-            });
+            case "about":
+                schemeToSignIn = "Cookie_About";
+                cookieName = ".Nsq.About.Session";
+                HttpContext.Session.SetString("access_token_about", accessToken ?? "");
+                break;
+            case "service":
+                schemeToSignIn = "Cookie_Service";
+                cookieName = ".Nsq.Service.Session";
+                HttpContext.Session.SetString("access_token_service", accessToken ?? "");
+                break;
+            case "history":
+                schemeToSignIn = "Cookie_History";
+                cookieName = ".Nsq.History.Session";
+                HttpContext.Session.SetString("access_token_history", accessToken ?? "");
+                break;
+            default:
+                // nsquarehomepage 메인 및 전역 SSO는 서비스 세션 쿠키를 발급하지 않음 (세션 메모리에만 보관)
+                schemeToSignIn = null;
+                cookieName = null;
+                break;
         }
 
-        await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
-        _logger.LogInformation("서비스 서버 세션 메모리 및 세션 쿠키(.NsqHomepage.ServiceSession)에 OIDC 토큰 세트 저장 완료 - User: {Email}", email);
+        ClaimsPrincipal principal;
+        if (!string.IsNullOrWhiteSpace(schemeToSignIn))
+        {
+            var identity = new ClaimsIdentity(claims, schemeToSignIn, ClaimTypes.Name, ClaimTypes.Role);
+            principal = new ClaimsPrincipal(identity);
+
+            var authProperties = new AuthenticationProperties
+            {
+                IsPersistent = true,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(15)
+            };
+
+            await HttpContext.SignInAsync(schemeToSignIn, principal, authProperties);
+            _logger.LogInformation("요청 위치에 따른 서비스 세션 쿠키 발급 완료 - Cookie: {CookieName}, Scheme: {Scheme}, Service: {Service}, User: {Email}",
+                cookieName, schemeToSignIn, finalService, email);
+        }
+        else
+        {
+            var identity = new ClaimsIdentity(claims, "MemorySession", ClaimTypes.Name, ClaimTypes.Role);
+            principal = new ClaimsPrincipal(identity);
+            _logger.LogInformation("전역 SSO 인증 완료 (서비스 세션 쿠키 미발급 모드) - Service: {Service}, User: {Email}",
+                finalService ?? "none", email);
+        }
+
+        return (cookieName, schemeToSignIn, principal, sub, email, name, role);
     }
+
+    private async Task IssueServiceSessionCookieAsync(TokenExchangeResultDto result)
+    {
+        var accessToken = (result.RootElement.TryGetProperty("access_token", out var at) ? at.GetString() : null)
+                          ?? (result.RootElement.TryGetProperty("accessToken", out var at2) ? at2.GetString() : null);
+        var refreshToken = (result.RootElement.TryGetProperty("refresh_token", out var rt) ? rt.GetString() : null)
+                           ?? (result.RootElement.TryGetProperty("refreshToken", out var rt2) ? rt2.GetString() : null);
+        var targetService = HttpContext.Session.GetString("target_service");
+
+        // 🌟 [요구사항 1] SSO 로그인 버튼을 눌렀을 때에는 서비스 세션 쿠키를 발급하지 않음
+        if (string.Equals(targetService, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            var sub = result.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == ClaimTypes.NameIdentifier)?.Value ?? "1";
+            var email = result.Claims.FirstOrDefault(c => c.Type == "email" || c.Type == ClaimTypes.Email)?.Value ?? "user@company.local";
+            var name = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value ?? "User";
+            var role = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value ?? "Admin";
+
+            HttpContext.Session.SetString("access_token", accessToken ?? "");
+            if (!string.IsNullOrWhiteSpace(refreshToken))
+            {
+                HttpContext.Session.SetString("refresh_token", refreshToken);
+            }
+            HttpContext.Session.SetString("token_type", "Bearer");
+            HttpContext.Session.SetInt32("expires_in", 900);
+            HttpContext.Session.SetString("token_stored_at_utc", DateTime.UtcNow.ToString("O"));
+            HttpContext.Session.SetString("user_sub", sub);
+            HttpContext.Session.SetString("user_email", email);
+            HttpContext.Session.SetString("user_name", name);
+            HttpContext.Session.SetString("user_role", role);
+            _logger.LogInformation("SSO 로그인 버튼 클릭에 따른 전역 인증 완료 (서비스 세션 쿠키 미발급 모드) - User: {Email}", email);
+            return;
+        }
+
+        await IssueServiceSessionCookieInternalAsync(accessToken ?? "", refreshToken, targetService, result.Claims);
+    }
+}
+
+public class IssueSessionRequestDto
+{
+    /// <summary>
+    /// 인증 서버(IdP)에서 발급받은 JWT Access Token (Step 07에서 발급된 access_token)
+    /// </summary>
+    public string? AccessToken { get; set; }
+
+    /// <summary>
+    /// 인증 서버(IdP)에서 발급받은 OIDC ID Token (사용자 신원 증명 토큰: sub, email, name, role 포함)
+    /// </summary>
+    public string? IdToken { get; set; }
+
+    /// <summary>
+    /// 인증 서버(IdP)에서 발급받은 Refresh Token
+    /// </summary>
+    public string? RefreshToken { get; set; }
+
+    /// <summary>
+    /// 대상 서비스 위치 (about: 회사소개, service: 주요서비스, history: 회사연혁, 또는 생략 시 기본값)
+    /// </summary>
+    public string? Service { get; set; }
 }
 
 public class BackchannelExchangeDto
@@ -581,6 +725,6 @@ public class StartSsoResponseDto
     public string CodeChallengeMethod { get; set; } = "S256";
     public string State { get; set; } = string.Empty;
     public string Scope { get; set; } = "openid profile email roles offline_access";
-    public string RedirectUri { get; set; } = "https://localhost:7001/api/auth/oidc-callback";
+    public string RedirectUri { get; set; } = "http://localhost:3000/callback";
     public string? ReturnUrl { get; set; }
 }

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { CurrentUser, HistoryItem, LogEntry } from '../types';
 import { PermissionBanner } from '../components/PermissionBanner';
 import { Inspector } from '../components/Inspector';
-import { checkAdminPermission } from '../utils/authUtils';
+import { checkServicePermission } from '../utils/authUtils';
 
 interface HistoryPageProps {
   user: CurrentUser;
@@ -36,11 +36,10 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
   const [isAdding, setIsAdding] = useState(false);
 
   const handleToggleAddForm = () => {
-    // 🛡️ 연혁 추가 폼 열기 전 권한 검사
-    const hasPermission = checkAdminPermission(
+    // 🛡️ 연혁 추가 폼 열기 전 권한 검사 (미보유 시 302 리다이렉트를 통한 SSO 쿠키 확인 & 세션 발급)
+    const hasPermission = checkServicePermission(
       user,
-      onOpenLogin,
-      showToast,
+      'history',
       addLog,
       '연혁 추가 폼 열기'
     );
@@ -54,10 +53,9 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
   const handleAdd = async () => {
     // 🛡️ 저장 전 권한 재검증
-    const hasPermission = checkAdminPermission(
+    const hasPermission = checkServicePermission(
       user,
-      onOpenLogin,
-      showToast,
+      'history',
       addLog,
       '연혁 추가'
     );
@@ -83,10 +81,9 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
   const handleDelete = async (id: number) => {
     // 🛡️ 삭제 전 권한 검증
-    const hasPermission = checkAdminPermission(
+    const hasPermission = checkServicePermission(
       user,
-      onOpenLogin,
-      showToast,
+      'history',
       addLog,
       `연혁 항목(ID: ${id}) 삭제`
     );
@@ -117,7 +114,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
         </div>
 
         {/* Permission Check Banner */}
-        <PermissionBanner user={user} pageName="회사 연혁 관리" onOpenLogin={onOpenLogin} />
+        <PermissionBanner user={user} pageName="회사 연혁" serviceKey="history" onOpenLogin={onOpenLogin} />
 
         <div className="content-grid" style={{ marginTop: '24px' }}>
           <div className="data-column">

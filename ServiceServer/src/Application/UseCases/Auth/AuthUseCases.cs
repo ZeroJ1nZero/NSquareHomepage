@@ -9,7 +9,7 @@ namespace Application.UseCases.Auth;
 /// </summary>
 public interface IInitiateSsoUseCase
 {
-    StartSsoResultDto Execute(HttpContext context, string? returnUrl = null);
+    StartSsoResultDto Execute(HttpContext context, string? returnUrl = null, string? targetService = null);
 }
 
 public class InitiateSsoUseCase : IInitiateSsoUseCase
@@ -21,9 +21,9 @@ public class InitiateSsoUseCase : IInitiateSsoUseCase
         _oidcStateService = oidcStateService;
     }
 
-    public StartSsoResultDto Execute(HttpContext context, string? returnUrl = null)
+    public StartSsoResultDto Execute(HttpContext context, string? returnUrl = null, string? targetService = null)
     {
-        var (verifier, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(context, returnUrl);
+        var (verifier, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(context, returnUrl, targetService);
 
         return new StartSsoResultDto
         {
@@ -112,7 +112,7 @@ public class ExchangeTokenUseCase : IExchangeTokenUseCase
         }
 
         var effectiveRedirectUri = string.IsNullOrWhiteSpace(redirectUri)
-            ? "https://localhost:7001/api/auth/oidc-callback"
+            ? "http://localhost:3000/callback"
             : redirectUri;
 
         return await _tokenExchangeService.ExchangeCodeForTokensAsync(code, verifier, effectiveRedirectUri, cancellationToken);

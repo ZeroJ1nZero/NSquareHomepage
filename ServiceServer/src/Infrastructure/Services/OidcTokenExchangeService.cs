@@ -120,8 +120,22 @@ public class OidcTokenExchangeService : IOidcTokenExchangeService
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("토큰 갱신 실패: HTTP {StatusCode}, 응답: {Response}", response.StatusCode, responseContent);
-            return new TokenExchangeResultDto(false, responseContent, new List<Claim>(), default);
+            _logger.LogWarning("OIDC /connect/token 토큰 갱신 응답 실패(HTTP {StatusCode}). Back-channel 직통신 엔드포인트(/api/auth/refresh-token)로 재시도합니다.", response.StatusCode);
+            var directEndpoint = $"{IdpBaseUrl.TrimEnd('/')}/api/auth/refresh-token";
+            var directPayload = new
+            {
+                refresh_token = refreshToken
+            };
+            using var directResponse = await client.PostAsJsonAsync(directEndpoint, directPayload, cancellationToken);
+            var directContent = await directResponse.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!directResponse.IsSuccessStatusCode)
+            {
+                _logger.LogError("토큰 갱신 최종 실패: HTTP {StatusCode}, 응답: {Response}", directResponse.StatusCode, directContent);
+                return new TokenExchangeResultDto(false, directContent, new List<Claim>(), default);
+            }
+
+            responseContent = directContent;
         }
 
         using var jsonDoc = JsonDocument.Parse(responseContent);

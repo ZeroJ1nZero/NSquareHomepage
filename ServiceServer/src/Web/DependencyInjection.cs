@@ -39,23 +39,51 @@ public static class DependencyInjection
         {
             options.Cookie.Name = ".NsqHomepage.SessionData";
             options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None;
             options.IdleTimeout = TimeSpan.FromMinutes(15);
         });
 
-        // 2. BFF 서비스 세션 쿠키 인증 등록 (sso_pipeline_specification.md 규격)
+        // 2. BFF 서비스별 독립 세션 쿠키 인증 등록 (회사 소개, 주요 서비스, 회사 연혁에만 해당 서비스 쿠키 발급)
         services.AddAuthentication(options =>
         {
-            options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+            options.DefaultScheme = "Cookie_About";
+            options.DefaultChallengeScheme = "Cookie_About";
         })
-        .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+        .AddCookie("Cookie_About", options =>
         {
-            options.Cookie.Name = ".NsqHomepage.ServiceSession";
+            options.Cookie.Name = ".Nsq.About.Session";
             options.Cookie.HttpOnly = true;
-            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
+            options.SlidingExpiration = true;
+            options.Events.OnRedirectToLogin = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            };
+        })
+        .AddCookie("Cookie_Service", options =>
+        {
+            options.Cookie.Name = ".Nsq.Service.Session";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None;
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
+            options.SlidingExpiration = true;
+            options.Events.OnRedirectToLogin = context =>
+            {
+                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                return Task.CompletedTask;
+            };
+        })
+        .AddCookie("Cookie_History", options =>
+        {
+            options.Cookie.Name = ".Nsq.History.Session";
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None;
             options.ExpireTimeSpan = TimeSpan.FromMinutes(15);
             options.SlidingExpiration = true;
             options.Events.OnRedirectToLogin = context =>

@@ -1,4 +1,29 @@
 import type { CurrentUser } from '../types';
+import * as api from '../api';
+
+export function checkServicePermission(
+  user: CurrentUser,
+  serviceKey: 'about' | 'service' | 'history',
+  addLog?: (tag: string, msg: string, type?: 'info' | 'success' | 'warn' | 'error') => void,
+  actionName: string = '이 작업'
+): boolean {
+  if (!user.activeSessions?.[serviceKey]) {
+    addLog?.(
+      '권한 검사',
+      `[302 리다이렉트] ${actionName} 수행 전 ${serviceKey} 서비스 세션 쿠키 부재 감지 ➔ SSO 쿠키 확인 및 세션 발급 파이프라인 가동`,
+      'warn'
+    );
+    api.startSso(window.location.href, serviceKey);
+    return false;
+  }
+
+  addLog?.(
+    '권한 검사',
+    `[승인] 사용자 ${user.userName || '관리자'}(Admin)의 ${serviceKey} 서비스 세션 쿠키 검증 완료!`,
+    'success'
+  );
+  return true;
+}
 
 export function checkAdminPermission(
   user: CurrentUser,

@@ -27,7 +27,7 @@ public class ServicesController : ControllerBase
 
     [HttpGet("api/public/company-services")]
     [AllowAnonymous]
-    [Tags("공개 데이터 조회 (Public API - 트랙 A)")]
+    [Tags("공개 데이터 조회")]
     public async Task<ActionResult<ServiceDto>> GetService(CancellationToken cancellationToken)
     {
         var result = await _getServiceUseCase.ExecuteAsync(cancellationToken);
@@ -35,7 +35,7 @@ public class ServicesController : ControllerBase
     }
 
     [HttpPut("api/admin/company-services")]
-    [Tags("Step 10. Zero-Trust 관리자 리소스 CRUD (소개 / 서비스 / 연혁)")]
+    [Tags("관리자 리소스 CRUD")]
     public async Task<IActionResult> UpdateService(
         [FromBody] UpdateServiceDto dto,
         CancellationToken cancellationToken)
@@ -46,16 +46,19 @@ public class ServicesController : ControllerBase
         {
             accessToken = authHeader["Bearer ".Length..].Trim();
         }
-        else if (User.Identity?.IsAuthenticated == true && User.IsInRole("Admin"))
+        else
         {
-            accessToken = await HttpContext.GetTokenAsync("access_token")
-                          ?? HttpContext.Session.GetString("access_token");
+            var authResult = await HttpContext.AuthenticateAsync("Cookie_Service");
+            if (authResult.Succeeded && authResult.Principal?.IsInRole("Admin") == true)
+            {
+                accessToken = authResult.Properties?.GetTokenValue("access_token")
+                              ?? HttpContext.Session.GetString("access_token_service")
+                              ?? HttpContext.Session.GetString("access_token");
+            }
         }
 
-        // 서비스세션쿠키 또는 유효한 관리자 토큰이 존재하지 않는 경우:
-        // PKCE 원본키(code_verifier), 해시키(code_challenge), CSRF 검증키(state)를 생성하고
-        // 서버 세션에 PKCE 원본키와 CSRF 검증키를 저장한 후,
-        // 클라이언트에게 인증서버 리다이렉트 주소(해시키, CSRF 검증키, 서비스식별자, response_type=code, scope 포함)를 전달
+        // 주요 서비스 전용 세션 쿠키(.Nsq.Service.Session) 또는 유효한 관리자 토큰이 존재하지 않는 경우:
+        // PKCE를 생성하고 returnUrl = /service, targetService = service로 302 Found 반환하여 Silent SSO 가동
         if (string.IsNullOrWhiteSpace(accessToken))
         {
             var returnUrl = Request.Headers.Referer.ToString();
@@ -63,11 +66,12 @@ public class ServicesController : ControllerBase
             {
                 returnUrl = "http://localhost:3000/service";
             }
-            var (verifier, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(HttpContext, returnUrl);
+            var (verifier, challenge, state, authorizeUrl) = _oidcStateService.GenerateAndStorePkce(HttpContext, returnUrl, "service");
             Response.Headers.Location = authorizeUrl;
             return StatusCode(StatusCodes.Status302Found, new
             {
-                message = "서비스 세션 쿠키가 존재하지 않아 인증 서버(IdP)로 리다이렉트합니다.",
+                message = "주요 서비스 전용 세션 쿠키(.Nsq.Service.Session)가 존재하지 않아 인증 서버(IdP)로 리다이렉트합니다.",
+                service = "service",
                 authorize_url = authorizeUrl,
                 client_id = "company-homepage",
                 response_type = "code",

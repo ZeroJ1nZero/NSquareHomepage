@@ -17,63 +17,180 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureCreatedAsync(ct);
 
-        // IssuedAuthorizationCodes 테이블 생성 보장 및 Zero-Trust 결합 해시 컬럼 추가
+        // 1. AuthorizationCodeIssuanceLog 테이블 생성 보장 (인가 코드 전용 - 1분 수명 및 SHA-256 해시 저장)
         await db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS `IssuedAuthorizationCodes` (
+            CREATE TABLE IF NOT EXISTS `AuthorizationCodeIssuanceLog` (
                 `Id` BIGINT NOT NULL AUTO_INCREMENT,
-                `AuthorizationCode` VARCHAR(512) NOT NULL,
                 `AuthorizationCodeHash` VARCHAR(128) NOT NULL,
-                `CodeChallenge` VARCHAR(256) NOT NULL,
                 `CodeChallengeHash` VARCHAR(128) NOT NULL,
-                `CombinedBindingHash` VARCHAR(128) NOT NULL DEFAULT '',
-                `CodeChallengeMethod` VARCHAR(32) NOT NULL,
                 `ClientId` VARCHAR(128) NOT NULL,
                 `RedirectUri` VARCHAR(512) NOT NULL,
                 `Subject` VARCHAR(128) NOT NULL,
                 `UserEmail` VARCHAR(256) NOT NULL,
-                `State` VARCHAR(256) NOT NULL,
                 `Scope` VARCHAR(512) NOT NULL,
                 `CreatedAtUtc` DATETIME(6) NOT NULL,
                 `ExpiresAtUtc` DATETIME(6) NOT NULL,
                 `IsRedeemed` TINYINT(1) NOT NULL DEFAULT 0,
                 `RedeemedAtUtc` DATETIME(6) NULL,
                 PRIMARY KEY (`Id`),
-                INDEX `IX_IssuedAuthorizationCodes_AuthorizationCodeHash` (`AuthorizationCodeHash`),
-                INDEX `IX_IssuedAuthorizationCodes_CombinedBindingHash` (`CombinedBindingHash`),
-                INDEX `IX_IssuedAuthorizationCodes_CreatedAtUtc` (`CreatedAtUtc`)
+                UNIQUE INDEX `UX_AuthorizationCodeIssuanceLog_AuthorizationCodeHash` (`AuthorizationCodeHash`),
+                INDEX `IX_AuthorizationCodeIssuanceLog_ExpiresAtUtc` (`ExpiresAtUtc`),
+                INDEX `IX_AuthorizationCodeIssuanceLog_CreatedAtUtc` (`CreatedAtUtc`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ", ct);
+
+        // 2. RefreshTokenLedger 테이블 생성 보장 (리프레시 토큰 전용 - 14일 수명 및 해시 저장)
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE TABLE IF NOT EXISTS `RefreshTokenLedger` (
+                `Id` BIGINT NOT NULL AUTO_INCREMENT,
+                `RefreshTokenHash` VARCHAR(128) NOT NULL,
+                `Subject` VARCHAR(128) NOT NULL,
+                `UserEmail` VARCHAR(256) NOT NULL,
+                `ClientId` VARCHAR(128) NOT NULL,
+                `Scope` VARCHAR(512) NOT NULL,
+                `CreatedAtUtc` DATETIME(6) NOT NULL,
+                `ExpiresAtUtc` DATETIME(6) NOT NULL,
+                `IsRevoked` TINYINT(1) NOT NULL DEFAULT 0,
+                `RevokedAtUtc` DATETIME(6) NULL,
+                `ReplacedByTokenHash` VARCHAR(128) NULL,
+                PRIMARY KEY (`Id`),
+                UNIQUE INDEX `UX_RefreshTokenLedger_RefreshTokenHash` (`RefreshTokenHash`),
+                INDEX `IX_RefreshTokenLedger_Subject` (`Subject`),
+                INDEX `IX_RefreshTokenLedger_ExpiresAtUtc` (`ExpiresAtUtc`),
+                INDEX `IX_RefreshTokenLedger_CreatedAtUtc` (`CreatedAtUtc`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ", ct);
+
+        // 테이블명 마이그레이션
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `user` TO `users`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `User` TO `users`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-block` TO `IpBlocklist`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `BlockedIp` TO `IpBlocklist`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `blockedip` TO `IpBlocklist`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-login` TO `LoginAuditLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `LoginAudit` TO `LoginAuditLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `loginlog` TO `LoginAuditLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-authorizationcodes` TO `AuthorizationCodeIssuanceLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationcodes` TO `AuthorizationCodeIssuanceLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-authorizationcodes` TO `OpenIddictAuthorizations`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationlog` TO `OpenIddictAuthorizations`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-oidctokens` TO `OpenIddictTokens`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `oidctokens` TO `OpenIddictTokens`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-scopes` TO `OpenIddictScopes`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationscopes` TO `OpenIddictScopes`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-refreshtokens` TO `RefreshTokenLedger`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `refreshtokens` TO `RefreshTokenLedger`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `IssuedRefreshTokens` TO `RefreshTokenLedger`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-trustedapplications` TO `OpenIddictApplications`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `trustedApplication` TO `OpenIddictApplications`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `trustedapplication` TO `OpenIddictApplications`;", ct); } catch { }
 
         try
         {
             await db.Database.ExecuteSqlRawAsync(@"
-                ALTER TABLE `IssuedAuthorizationCodes` ADD COLUMN IF NOT EXISTS `CombinedBindingHash` VARCHAR(128) NOT NULL DEFAULT '';
+                ALTER TABLE `OpenIddictApplications` CHANGE COLUMN `DisplayName` `HomepageName` LONGTEXT NULL;
             ", ct);
         }
-        catch { /* Column may already exist */ }
+        catch { /* Column may already be renamed or not exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictApplications` DROP COLUMN IF EXISTS `DisplayNames`;
+            ", ct);
+        }
+        catch { /* Column may not exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictApplications` DROP COLUMN IF EXISTS `JsonWebKeySet`;
+            ", ct);
+        }
+        catch { /* Column may not exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictApplications` 
+                ADD CONSTRAINT `CK_OpenIddictApplications_HomepageName_EnglishOnly` 
+                CHECK (`HomepageName` IS NULL OR `HomepageName` REGEXP '^[a-zA-Z0-9[:space:]_.,\'\""()-]+$');
+            ", ct);
+        }
+        catch { /* Constraint may already exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictScopes` DROP COLUMN IF EXISTS `DisplayNames`;
+            ", ct);
+        }
+        catch { /* Column may not exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictScopes` 
+                ADD CONSTRAINT `CK_OpenIddictScopes_DisplayName_EnglishOnly` 
+                CHECK (`DisplayName` IS NULL OR `DisplayName` REGEXP '^[a-zA-Z0-9[:space:]_.,\'\""()-]+$');
+            ", ct);
+        }
+        catch { /* Constraint may already exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictScopes` DROP COLUMN IF EXISTS `Descriptions`;
+            ", ct);
+        }
+        catch { /* Column may not exist */ }
+
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictScopes` 
+                ADD CONSTRAINT `CK_OpenIddictScopes_Description_EnglishOnly` 
+                CHECK (`Description` IS NULL OR `Description` REGEXP '^[a-zA-Z0-9[:space:]_.,\'\""()-]+$');
+            ", ct);
+        }
+        catch { /* Constraint may already exist */ }
 
         // 회사 홈페이지 클라이언트 등록 (AuthServer/README.md 규격)
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
         var clientId = config["Clients:Homepage:ClientId"] ?? "company-homepage";
         var existingApp = await manager.FindByClientIdAsync(clientId, ct);
 
+        // 1. 필수 Redirect URI 화이트리스트 (중복 및 미사용 레거시 경로 제거)
         var allowedRedirectUris = new HashSet<Uri>
         {
-            new Uri(config["Clients:Homepage:RedirectUri"] ?? "https://localhost:7001/signin-oidc"),
+            new Uri("http://localhost:3000/callback"),
             new Uri("https://localhost:7001/api/auth/oidc-callback"),
-            new Uri("http://localhost:5016/api/auth/oidc-callback"),
-            new Uri("http://localhost:5016/signin-oidc"),
-            new Uri("http://localhost:5000/signin-oidc")
+            new Uri("http://localhost:5016/api/auth/oidc-callback")
         };
 
+        // 2. 필수 Post Logout Redirect URI 화이트리스트 (중복 및 불필요 서브경로 제거)
         var allowedPostLogoutRedirectUris = new HashSet<Uri>
         {
-            new Uri(config["Clients:Homepage:PostLogoutRedirectUri"] ?? "https://localhost:7001/"),
             new Uri("http://localhost:3000/"),
-            new Uri("http://localhost:3000"),
-            new Uri("http://localhost:5016/signout-callback-oidc"),
-            new Uri("http://localhost:5016/"),
-            new Uri("http://localhost:5000/")
+            new Uri("http://localhost:3000/login"),
+            new Uri("https://localhost:7001/"),
+            new Uri("http://localhost:5016/")
+        };
+
+        // 3. 필수 권한 및 스코프 (중복 정의 제거 및 PKCE 기반 인가코드/리프레시 토큰 권한만 유지)
+        var requiredPermissions = new HashSet<string>
+        {
+            Permissions.Endpoints.Authorization,
+            Permissions.Endpoints.Token,
+            Permissions.Endpoints.EndSession,
+            Permissions.GrantTypes.AuthorizationCode,
+            Permissions.GrantTypes.RefreshToken,
+            Permissions.ResponseTypes.Code,
+            Permissions.Prefixes.Scope + Scopes.OpenId,
+            Permissions.Prefixes.Scope + Scopes.Email,
+            Permissions.Prefixes.Scope + Scopes.Profile,
+            Permissions.Prefixes.Scope + Scopes.Roles,
+            Permissions.Prefixes.Scope + Scopes.OfflineAccess
         };
 
         if (existingApp is null)
@@ -81,38 +198,14 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
             var descriptor = new OpenIddictApplicationDescriptor
             {
                 ClientId = clientId,
-                DisplayName = "회사 홈페이지",
+                DisplayName = "Company Homepage",
                 ClientType = ClientTypes.Public,
-                Permissions =
-                {
-                    Permissions.Endpoints.Authorization,
-                    Permissions.Endpoints.Token,
-                    Permissions.Endpoints.EndSession,
-                    Permissions.GrantTypes.AuthorizationCode,
-                    Permissions.GrantTypes.RefreshToken,
-                    Permissions.GrantTypes.Password,
-                    Permissions.ResponseTypes.Code,
-                    Permissions.Scopes.Email,
-                    Permissions.Scopes.Profile,
-                    Permissions.Scopes.Roles,
-                    Permissions.Prefixes.Scope + Scopes.OpenId,
-                    Permissions.Prefixes.Scope + Scopes.Email,
-                    Permissions.Prefixes.Scope + Scopes.Profile,
-                    Permissions.Prefixes.Scope + Scopes.Roles,
-                    Permissions.Prefixes.Scope + Scopes.OfflineAccess,
-                },
-                Requirements = { Requirements.Features.ProofKeyForCodeExchange },
+                Requirements = { Requirements.Features.ProofKeyForCodeExchange }
             };
 
-            foreach (var uri in allowedRedirectUris)
-            {
-                descriptor.RedirectUris.Add(uri);
-            }
-
-            foreach (var uri in allowedPostLogoutRedirectUris)
-            {
-                descriptor.PostLogoutRedirectUris.Add(uri);
-            }
+            foreach (var perm in requiredPermissions) descriptor.Permissions.Add(perm);
+            foreach (var uri in allowedRedirectUris) descriptor.RedirectUris.Add(uri);
+            foreach (var uri in allowedPostLogoutRedirectUris) descriptor.PostLogoutRedirectUris.Add(uri);
 
             await manager.CreateAsync(descriptor, ct);
         }
@@ -121,57 +214,22 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
             var descriptor = new OpenIddictApplicationDescriptor();
             await manager.PopulateAsync(descriptor, existingApp, ct);
 
-            bool needsUpdate = false;
-            foreach (var uri in allowedRedirectUris)
-            {
-                if (!descriptor.RedirectUris.Contains(uri))
-                {
-                    descriptor.RedirectUris.Add(uri);
-                    needsUpdate = true;
-                }
-            }
+            descriptor.DisplayName = "Company Homepage";
 
-            foreach (var uri in allowedPostLogoutRedirectUris)
-            {
-                if (!descriptor.PostLogoutRedirectUris.Contains(uri))
-                {
-                    descriptor.PostLogoutRedirectUris.Add(uri);
-                    needsUpdate = true;
-                }
-            }
+            // DB 내 기존 중복/레거시 데이터를 정제된 세트로 전체 최신화
+            descriptor.RedirectUris.Clear();
+            foreach (var uri in allowedRedirectUris) descriptor.RedirectUris.Add(uri);
 
-            var requiredPermissions = new[]
-            {
-                Permissions.Endpoints.Authorization,
-                Permissions.Endpoints.Token,
-                Permissions.Endpoints.EndSession,
-                Permissions.GrantTypes.AuthorizationCode,
-                Permissions.GrantTypes.RefreshToken,
-                Permissions.GrantTypes.Password,
-                Permissions.ResponseTypes.Code,
-                Permissions.Scopes.Email,
-                Permissions.Scopes.Profile,
-                Permissions.Scopes.Roles,
-                Permissions.Prefixes.Scope + Scopes.OpenId,
-                Permissions.Prefixes.Scope + Scopes.Email,
-                Permissions.Prefixes.Scope + Scopes.Profile,
-                Permissions.Prefixes.Scope + Scopes.Roles,
-                Permissions.Prefixes.Scope + Scopes.OfflineAccess,
-            };
+            descriptor.PostLogoutRedirectUris.Clear();
+            foreach (var uri in allowedPostLogoutRedirectUris) descriptor.PostLogoutRedirectUris.Add(uri);
 
-            foreach (var perm in requiredPermissions)
-            {
-                if (!descriptor.Permissions.Contains(perm))
-                {
-                    descriptor.Permissions.Add(perm);
-                    needsUpdate = true;
-                }
-            }
+            descriptor.Permissions.Clear();
+            foreach (var perm in requiredPermissions) descriptor.Permissions.Add(perm);
 
-            if (needsUpdate)
-            {
-                await manager.UpdateAsync(existingApp, descriptor, ct);
-            }
+            descriptor.Requirements.Clear();
+            descriptor.Requirements.Add(Requirements.Features.ProofKeyForCodeExchange);
+
+            await manager.UpdateAsync(existingApp, descriptor, ct);
         }
 
         // 개발 환경 전용 테스트 계정

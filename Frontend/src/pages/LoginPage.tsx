@@ -10,7 +10,7 @@ export const LoginPage: React.FC = () => {
     const fullReturnUrl = returnUrl.startsWith('http')
       ? returnUrl
       : window.location.origin + (returnUrl.startsWith('/') ? returnUrl : `/${returnUrl}`);
-    api.startSso(fullReturnUrl);
+    api.startSso(fullReturnUrl, 'none');
   }, [returnUrl]);
 
   return (

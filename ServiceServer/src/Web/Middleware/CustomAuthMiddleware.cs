@@ -13,9 +13,11 @@ public class CustomAuthMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Cookies.TryGetValue(".NsqHomepage.ServiceSession", out var cookieValue))
+        if (context.Request.Cookies.ContainsKey(".Nsq.About.Session") ||
+            context.Request.Cookies.ContainsKey(".Nsq.Service.Session") ||
+            context.Request.Cookies.ContainsKey(".Nsq.History.Session"))
         {
-            _logger.LogDebug("ServiceSession Cookie 수신 확인");
+            _logger.LogDebug("위치별 서비스 세션 쿠키 수신 확인");
         }
 
         await _next(context);

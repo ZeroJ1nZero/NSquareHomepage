@@ -23,8 +23,6 @@ namespace Web.Controllers;
 /// </summary>
 public class AuthorizationController(
     AppDbContext db,
-    IOpenIddictTokenManager tokenManager,
-    IOpenIddictAuthorizationManager authorizationManager,
     IPasswordHasher<User> hasher,
     ILoginAuditor auditor) : Controller
 {
@@ -63,29 +61,6 @@ public class AuthorizationController(
         // 외부 클라이언트를 받게 되면 동의 화면 추가.
         foreach (var claim in principal.Claims)
             claim.SetDestinations(GetDestinations(claim));
-
-        if (!string.IsNullOrEmpty(request.CodeChallenge))
-        {
-            var challengeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.CodeChallenge))).ToLowerInvariant();
-            db.IssuedAuthorizationCodes.Add(new IssuedAuthorizationCode
-            {
-                AuthorizationCode = "oidc_auth_code",
-                AuthorizationCodeHash = challengeHash,
-                CodeChallenge = request.CodeChallenge,
-                CodeChallengeHash = challengeHash,
-                CodeChallengeMethod = request.CodeChallengeMethod ?? "S256",
-                ClientId = request.ClientId ?? "company-homepage",
-                RedirectUri = request.RedirectUri ?? string.Empty,
-                Subject = user.Id.ToString(),
-                UserEmail = user.Email,
-                State = request.State ?? string.Empty,
-                Scope = string.Join(" ", request.GetScopes()),
-                CreatedAtUtc = DateTime.UtcNow,
-                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(5),
-                IsRedeemed = false
-            });
-            await db.SaveChangesAsync();
-        }
 
         return SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -155,6 +130,18 @@ public class AuthorizationController(
                 }));
         }
 
+        if (request.IsAuthorizationCodeGrantType() && !string.IsNullOrEmpty(request.Code))
+        {
+            var codeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.Code))).ToLowerInvariant();
+            var issuedCode = await db.AuthorizationCodes.FirstOrDefaultAsync(c => c.AuthorizationCodeHash == codeHash, HttpContext.RequestAborted);
+            if (issuedCode != null)
+            {
+                issuedCode.IsRedeemed = true;
+                issuedCode.RedeemedAtUtc = DateTime.UtcNow;
+                await db.SaveChangesAsync(HttpContext.RequestAborted);
+            }
+        }
+
         foreach (var claim in result.Principal!.Claims)
             claim.SetDestinations(GetDestinations(claim));
 
@@ -180,48 +167,7 @@ public class AuthorizationController(
         });
     }
 
-    /// <summary>
-    /// 전역 로그아웃 (/connect/logout):
-    /// 1. AuthServer 세션 쿠키 삭제
-    /// 2. 해당 사용자의 DB 내 모든 refresh_token / authorization 항목 즉시 폐기(Revoke) (모든 서비스 세션 종료 전파)
-    /// 3. OIDC end_session 처리 및 post_logout_redirect_uri 리다이렉트
-    /// </summary>
-    [HttpGet("~/connect/logout"), HttpPost("~/connect/logout")]
-    [IgnoreAntiforgeryToken]
-    public async Task<IActionResult> Logout()
-    {
-        var cookieResult = await HttpContext.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        var userId = cookieResult.Principal?.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            // 이 사용자의 모든 활성 토큰(refresh_token 포함) 및 Authorization 정보 즉시 폐기(Bulk Revoke)
-            await tokenManager.RevokeAsync(userId, null, null, null, HttpContext.RequestAborted);
-            await authorizationManager.RevokeAsync(userId, null, null, null, HttpContext.RequestAborted);
-        }
-
-        // AuthServer SSO 세션 쿠키 명시적 파기
-        await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-        Response.Cookies.Delete("AuthServer_SSO_Cookie", new CookieOptions
-        {
-            Path = "/",
-            Secure = true,
-            SameSite = SameSiteMode.Lax
-        });
-        Response.Cookies.Delete("AuthServer_SSO_Cookie");
-
-        var postLogoutRedirectUri = Request.Query["post_logout_redirect_uri"].ToString();
-        if (string.IsNullOrWhiteSpace(postLogoutRedirectUri) && Request.HasFormContentType)
-        {
-            postLogoutRedirectUri = Request.Form["post_logout_redirect_uri"].ToString();
-        }
-        if (string.IsNullOrWhiteSpace(postLogoutRedirectUri))
-        {
-            postLogoutRedirectUri = "http://localhost:3000/";
-        }
-
-        return Redirect(postLogoutRedirectUri);
-    }
 
     private static IEnumerable<string> GetDestinations(Claim claim) => claim.Type switch
     {

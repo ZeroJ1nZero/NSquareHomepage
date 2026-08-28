@@ -78,9 +78,22 @@ function getAuthHeader(): Record<string, string> {
  * [Step 1 SSO 시작] OIDC SSO 플로우를 가동하여 인증 서버(IdP)로 이동합니다.
  * @param returnUrl 인증 완료 후 최종 복귀할 프론트엔드 주소 (기본값: 현재 페이지)
  */
-export function startSso(returnUrl?: string): void {
+export function startSso(returnUrl?: string, service?: string): void {
   const target = returnUrl || (window.location.origin + window.location.pathname);
-  window.location.href = `${API_BASE}/auth/start-sso?returnUrl=${encodeURIComponent(target)}&autoRedirect=true`;
+  const serviceParam = service ? `&service=${encodeURIComponent(service)}` : '';
+  
+  try {
+    sessionStorage.setItem('sso_return_url', target);
+    if (service) {
+      sessionStorage.setItem('sso_target_service', service);
+    } else {
+      sessionStorage.removeItem('sso_target_service');
+    }
+  } catch (e) {
+    console.warn('sessionStorage error:', e);
+  }
+
+  window.location.href = `${API_BASE}/auth/access-sso?returnUrl=${encodeURIComponent(target)}&autoRedirect=true${serviceParam}`;
 }
 
 /**
@@ -143,7 +156,7 @@ export async function login(email: string, password: string): Promise<{ success:
 export async function getCurrentUser(): Promise<CurrentUser> {
   // 1. ServiceServer 세션 쿠키 (.NsqHomepage.ServiceSession) 확인
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await fetch(`${API_BASE}/auth/user-identity`, {
       credentials: 'include',
       headers: {
         ...getAuthHeader(),
@@ -158,6 +171,7 @@ export async function getCurrentUser(): Promise<CurrentUser> {
           userName: data.userName || '관리자',
           role: data.role || 'Admin',
           email: data.email,
+          activeSessions: data.activeSessions,
         };
         localStorage.setItem(USER_KEY, JSON.stringify(user));
         return user;
@@ -175,23 +189,28 @@ export async function getCurrentUser(): Promise<CurrentUser> {
   }
 
   try {
-    const user: CurrentUser = JSON.parse(rawUser);
-    const decoded = parseJwt(token);
-    if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-      clearStoredTokens();
-      throw new Error('토큰 만료');
-    }
+    const user = JSON.parse(rawUser) as CurrentUser;
     return user;
   } catch {
     clearStoredTokens();
-    throw new Error('유효하지 않은 세션');
+    throw new Error('인증 세션 만료');
   }
 }
 
+/**
+ * 전역 SSO 로그아웃 (ServiceServer 세션 및 AuthServer 전역 SSO 세션 파기)
+ */
 export async function logout(): Promise<void> {
   clearStoredTokens();
   try {
-    const res = await fetch(`${API_BASE}/auth/logout`, {
+    sessionStorage.clear();
+    localStorage.clear();
+  } catch (e) {
+    console.warn('Storage clear warning:', e);
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/logout?returnUrl=${encodeURIComponent('http://localhost:3000/')}`, {
       method: 'POST',
       credentials: 'include',
     });
@@ -205,8 +224,8 @@ export async function logout(): Promise<void> {
   } catch (err) {
     console.warn('Logout API error:', err);
   }
-  // Fallback 직접 AuthServer 로그아웃으로 이동하여 AuthServer_SSO_Cookie 파기
-  window.location.href = `https://localhost:7213/connect/logout?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+  // Fallback 직접 AuthServer 로그아웃으로 이동하여 AuthServer_SSO_Cookie 파기 후 http://localhost:3000/ 으로 복귀
+  window.location.href = `https://localhost:7213/api/auth/logout?post_logout_redirect_uri=${encodeURIComponent('http://localhost:3000/')}`;
 }
 
 export async function getCompanyAbout(): Promise<AboutData> {
@@ -232,7 +251,7 @@ export async function updateCompanyAbout(content: string): Promise<AboutData> {
     if (data?.authorize_url) {
       window.location.href = data.authorize_url;
     } else {
-      startSso(window.location.href);
+      startSso(window.location.href, 'about');
     }
     throw new Error('서비스 세션 쿠키 발급 파이프라인으로 이동합니다.');
   }
@@ -263,7 +282,7 @@ export async function updateCompanyServices(service: string): Promise<ServiceDat
     if (data?.authorize_url) {
       window.location.href = data.authorize_url;
     } else {
-      startSso(window.location.href);
+      startSso(window.location.href, 'service');
     }
     throw new Error('서비스 세션 쿠키 발급 파이프라인으로 이동합니다.');
   }
@@ -297,7 +316,7 @@ export async function addCompanyHistory(date: string, content: string): Promise<
     if (data?.authorize_url) {
       window.location.href = data.authorize_url;
     } else {
-      startSso(window.location.href);
+      startSso(window.location.href, 'history');
     }
     throw new Error('서비스 세션 쿠키 발급 파이프라인으로 이동합니다.');
   }

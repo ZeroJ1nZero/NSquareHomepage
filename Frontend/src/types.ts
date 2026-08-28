@@ -3,6 +3,11 @@ export interface CurrentUser {
   userName: string | null;
   role: string | null;
   email?: string | null;
+  activeSessions?: {
+    about?: boolean;
+    service?: boolean;
+    history?: boolean;
+  };
 }
 
 export interface AboutData {

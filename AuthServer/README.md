@@ -23,7 +23,7 @@ src/
 ├── Domain/                              # 가장 안쪽. 아무것도 참조하지 않는 순수 엔티티
 │   └── Entities/
 │       ├── User.cs                      # 사용자 + UserRole enum
-│       ├── LoginAudit.cs                # 로그인 시도 기록
+│       ├── LoginLog.cs                  # 로그인 시도 기록 (loginlog)
 │       └── BlockedIp.cs                 # 차단 IP
 │
 ├── Application/                         # 업무 규칙. Domain만 참조
@@ -36,7 +36,7 @@ src/
 ├── Infrastructure/                      # 기술 구현. DB·해싱이 여기에만 존재
 │   ├── Persistence/AppDbContext.cs      # EF Core 매핑 (테이블명·컬럼 길이·인덱스)
 │   ├── Services/UserService.cs          # 중복 검사 + 비밀번호 해싱 + 저장
-│   ├── Services/LoginAuditor.cs         # LoginAudit 행 추가
+│   ├── Services/LoginAuditor.cs         # loginlog 행 추가
 │   └── DependencyInjection.cs           # 조립: DbContext, OpenIddict Core, PasswordHasher
 │
 └── Web/                                 # HTTP 계층 (진입점)
@@ -140,7 +140,7 @@ DB가 통째로 유출돼도 원문 비밀번호는 복원할 수 없다.
 ### 3-1. 서버 시작 시 (`SeedData` — IHostedService)
 
 1. `EnsureCreatedAsync()` — DB/테이블이 없으면 현재 모델대로 생성 (있으면 아무것도 안 함)
-2. OpenIddictApplications에 `company-homepage` 클라이언트가 없으면 등록
+2. trustedApplication에 `company-homepage` 클라이언트가 없으면 등록
    (redirect URI, PKCE 필수, 허용 grant/scope 포함)
 3. **개발 환경이면** 테스트 계정 시드: `test@company.local` / `Test1234!` / Admin
 
@@ -221,7 +221,7 @@ authorize가 로그인 화면으로 떨어진다 (SSO 전체 해제).
 
 **redirect_uri(콜백 주소)의 양쪽 역할**: 콜백 페이지 자체는 클라이언트에 존재하고,
 클라이언트가 요청 시 `redirect_uri` 파라미터로 지정한다. 인증 서버는 이를
-`OpenIddictApplications.RedirectUris` 화이트리스트와 대조해 **목록에 없으면 거부**한다
+`trustedApplication.RedirectUris` 화이트리스트와 대조해 **목록에 없으면 거부**한다
 — 공격자가 코드를 자기 서버로 빼돌리는 것을 막는 장치.
 
 ### 3-4. 회원가입 — `POST /api/register`
@@ -246,9 +246,9 @@ Body: { "role": 0 | 1 | 2 }
 
 ---
 
-## 4. 테이블 상세 (7개)
+## 4. 테이블 상세 (9개)
 
-### User — 사용자
+### users — 사용자 마스터
 
 | 컬럼 | 타입 | 하는 일 |
 |---|---|---|
@@ -258,7 +258,35 @@ Body: { "role": 0 | 1 | 2 }
 | `PasswordHash` | longtext | PBKDF2 해시(솔트 포함). 평문 저장 안 함 |
 | `Role` | int | 역할 enum: `0=Customer(고객, 가입 기본값)` `1=Employee(직원)` `2=Admin(관리자)`. **숫자가 DB에 저장되므로 enum 멤버의 번호를 나중에 바꾸면 안 됨** (새 역할은 뒤 번호로 추가) |
 
-### LoginAudit — 로그인 시도 감사 기록
+### AuthorizationCodeIssuanceLog — 인가 코드 발급 및 1회용 소진 원장
+
+1분 수명의 일회용 인가 코드 해시 및 스냅샷 저장소. 토큰 교환 즉시 `IsRedeemed = 1`로 소진 처리.
+
+| 컬럼 | 타입 | 하는 일 |
+|---|---|---|
+| `Id` | bigint, PK, 자동증가 | 인가 코드 발급 식별자 |
+| `AuthorizationCodeHash` | varchar(128), **유니크** | 인가 코드 SHA-256 해시 (평문 미저장) |
+| `CodeChallengeHash` | varchar(128) | PKCE `code_challenge` SHA-256 해시 (토큰 교환 시 대조) |
+| `ClientId` / `RedirectUri` | varchar | 인가 요청 클라이언트 및 콜백 URL |
+| `Subject` / `UserEmail` / `Scope` | varchar | 사용자 ID, 이메일, 스코프 스냅샷 |
+| `CreatedAtUtc` / `ExpiresAtUtc` | datetime(6) | 발급 일시 및 1분 만료 시각 |
+| `IsRedeemed` / `RedeemedAtUtc` | tinyint(1) / datetime(6) | 1회용 소진 플래그 및 교환 완료 시각 |
+
+### RefreshTokenLedger — 리프레시 토큰 관리 원장
+
+14일 수명의 리프레시 토큰 해시 원장. Token Rotation 정책 적용.
+
+| 컬럼 | 타입 | 하는 일 |
+|---|---|---|
+| `Id` | bigint, PK, 자동증가 | 토큰 식별자 |
+| `RefreshTokenHash` | varchar(128), **유니크** | Refresh Token SHA-256 해시 |
+| `Subject` / `UserEmail` | varchar | 소유 사용자 ID 및 이메일 |
+| `ClientId` / `Scope` | varchar | 대상 클라이언트 및 스코프 |
+| `CreatedAtUtc` / `ExpiresAtUtc` | datetime(6) | 발급 일시 및 14일 만료 시각 |
+| `IsRevoked` / `RevokedAtUtc` | tinyint(1) / datetime(6) | 폐기 플래그 및 폐기 시각 |
+| `ReplacedByTokenHash` | varchar(128) | 교체 발급된 차기 토큰 해시 (회전 추적) |
+
+### LoginAuditLog — 로그인 시도 감사 기록
 
 성공/실패 모든 시도가 기록된다. 침입 시도 추적·계정 잠금 도입 시 근거 데이터.
 
@@ -270,7 +298,7 @@ Body: { "role": 0 | 1 | 2 }
 | `Succeeded` | tinyint(1) | 성공 여부 |
 | `AttemptedAtUtc` | datetime(6), 인덱스 | 시도 시각(UTC). 기간 조회용 인덱스 |
 
-### BlockedIp — 차단 IP (수동 운영 테이블)
+### IpBlocklist — 차단 IP (수동 운영 테이블)
 
 행을 넣으면 그 IP의 모든 요청이 403. **자동 차단/자동 해제 없음** — 운영자가
 직접 넣고 뺀다. 미들웨어가 1분 캐시로 검사하므로 반영이 최대 1분 늦다.
@@ -295,6 +323,7 @@ Body: { "role": 0 | 1 | 2 }
 | `PostLogoutRedirectUris` | 로그아웃 후 복귀 허용 주소 |
 | `Permissions` | 허용된 엔드포인트·grant type·scope (JSON) |
 | `Requirements` | PKCE 필수 등 요구사항 |
+| `HomepageName` | 클라이언트 영문 명칭 (영문 `CHECK` 제약 적용) |
 
 ### OpenIddictAuthorizations — 인가 기록
 
@@ -321,9 +350,9 @@ Body: { "role": 0 | 1 | 2 }
 | `CreationDate` / `ExpirationDate` / `RedemptionDate` | 수명 추적 |
 | `Payload` | 토큰 본문(암호화) |
 
-### OpenIddictScopes — 커스텀 스코프 정의
+### OpenIddictScopes — 인가 스코프 정의
 
-표준 스코프(openid/email/profile)만 사용 중이라 현재 비어 있음.
+시스템에 정의된 권한 범위의 명칭, 설명, 대상 리소스 서버 목록. `DisplayName`, `Description` 영문 `CHECK` 제약 적용.
 
 ---
 

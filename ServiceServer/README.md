@@ -35,17 +35,20 @@ ServiceServer/
 
 | 그룹 | 메서드 | 엔드포인트 | 설명 |
 | :--- | :--- | :--- | :--- |
-| **1. SSO 로그인 & 토큰 발급** | `GET` | `/api/auth/start-sso` | [Step 1~2] PKCE/CSRF 키 생성 및 IdP 인가 주소 발급 |
-| | `GET` | `/api/auth/oidc-callback` | [Step 8~12] OIDC 콜백 수신, 백채널 토큰 교환 & 세션 발급 |
-| | `GET` | `/api/auth/user-identity` | [Step 12] 현재 세션 사용자 식별 및 Role 확인 |
-| **2. 공개 데이터 조회 (트랙 A)** | `GET` | `/api/public/company-about` | 회사 소개 정보 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
-| | `GET` | `/api/public/company-services` | 주요 서비스 정보 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
-| | `GET` | `/api/public/company-histories`| 전체 연혁 목록 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
-| **3. 관리자 데이터 처리 (트랙 B)** | `PUT` | `/api/admin/company-about` | 회사 소개 정보 수정 (`Role == Admin` 검증 + Bearer 첨부) |
-| | `PUT` | `/api/admin/company-services` | 주요 서비스 정보 수정 (`Role == Admin` 검증 + Bearer 첨부) |
-| | `PUT` | `/api/admin/company-histories`| 연혁 항목 저장/추가 (`Role == Admin` 검증 + Bearer 첨부) |
-| **4. 기타 / 보조 기능** | `POST` | `/api/auth/logout` | 서비스 세션 쿠키 파기 및 로그아웃 |
-| | `POST` | `/api/tools/manual-token-exchange` | Swagger/Postman용 수동 인가 코드/verifier 토큰 교환 도구 |
+| **1. SSO 로그인 & 토큰 발급** | `GET` | `/api/auth/access-sso` | [Step 01] PKCE/CSRF 키 생성 및 IdP 인가 주소 발급 |
+| | `POST` | `/api/auth/validate-pkce` | [Step 06] 서버 간 PKCE 토큰 교환 검증 |
+| | `POST` | `/api/auth/oidc-callback` | [Step 08] 위치별 서비스 세션 쿠키 발급 |
+| | `GET` | `/api/auth/session-tokens` | [Step 09] 세션 메모리 보관 토큰 확인 |
+| | `GET` | `/api/auth/session-cookie` | [서비스 세션 쿠키 확인] 서비스 세션 쿠키 유효성 및 로그인 사용자 정보 확인 |
+| **2. 공개 데이터 조회 (트랙 A)** | `GET` | `/api/public/company-about` | [공개 데이터 조회] 회사 소개 정보 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
+| | `GET` | `/api/public/company-services` | [공개 데이터 조회] 주요 서비스 정보 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
+| | `GET` | `/api/public/company-histories`| [공개 데이터 조회] 전체 연혁 목록 공개 조회 (로그인 불필요 ➔ 리소스 서버 대행) |
+| **3. 관리자 데이터 처리 (트랙 B)** | `PUT` | `/api/admin/company-about` | [관리자 리소스 CRUD] 회사 소개 정보 수정 (`Role == Admin` 검증 + Bearer 첨부) |
+| | `PUT` | `/api/admin/company-services` | [관리자 리소스 CRUD] 주요 서비스 정보 수정 (`Role == Admin` 검증 + Bearer 첨부) |
+| | `PUT` | `/api/admin/company-histories`| [관리자 리소스 CRUD] 연혁 항목 저장/추가 (`Role == Admin` 검증 + Bearer 첨부) |
+| | `DELETE` | `/api/admin/company-histories/{id}` | [관리자 리소스 CRUD] 연혁 항목 개별 삭제 (`Role == Admin` 검증 + Bearer 첨부) |
+| **4. 세션 관리 & 로그아웃** | `POST` | `/api/auth/refresh` | [로그아웃, 토큰 갱신] Access Token 갱신 |
+| | `POST` | `/api/auth/logout` | [로그아웃, 토큰 갱신] 서비스 세션 쿠키 파기 및 로그아웃 |
 
 ---
 
