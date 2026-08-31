@@ -9,10 +9,10 @@ public sealed partial class RegisterUserUseCase(IUserService userService)
     [GeneratedRegex(@"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z0-9]{2,}$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex EmailRegex();
 
-    public async Task<UserCreationResult> ExecuteAsync(string email, string userName, string password, UserRole role = UserRole.Customer, CancellationToken ct = default)
+    public async Task<UserCreationResult> ExecuteAsync(string email, string displayName, string password, UserRole role = UserRole.Customer, CancellationToken ct = default)
     {
         email = email?.Trim() ?? "";
-        userName = userName?.Trim() ?? "";
+        displayName = displayName?.Trim() ?? "";
 
         if (string.IsNullOrWhiteSpace(email))
             return UserCreationResult.Fail("이메일을 입력하세요.");
@@ -20,12 +20,12 @@ public sealed partial class RegisterUserUseCase(IUserService userService)
         if (!EmailRegex().IsMatch(email))
             return UserCreationResult.Fail("올바른 이메일 형식(예: id@domain.com 또는 id@company.local)이어야 합니다.");
 
-        if (string.IsNullOrWhiteSpace(userName))
+        if (string.IsNullOrWhiteSpace(displayName))
             return UserCreationResult.Fail("이름을 입력하세요.");
 
         if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
             return UserCreationResult.Fail("비밀번호는 최소 6자 이상이어야 합니다.");
 
-        return await userService.CreateUserAsync(email, userName, password, role, ct);
+        return await userService.CreateUserAsync(email, displayName, password, role, ct);
     }
 }

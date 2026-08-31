@@ -47,7 +47,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
       return;
     }
 
-    setEditContent(service.service || '');
+    setEditContent(service.content || service.service || '');
     setIsEditing(true);
   };
 
@@ -82,7 +82,7 @@ export const ServicePage: React.FC<ServicePageProps> = ({
     }
   };
 
-  const displayText = service.service || '(등록된 주요 서비스가 없습니다. 관리자로 로그인하여 등록하세요)';
+  const displayText = service.content || service.service || '(등록된 주요 서비스가 없습니다. 관리자로 로그인하여 등록하세요)';
 
   return (
     <main className="main-content">

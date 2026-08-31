@@ -51,7 +51,7 @@ public class AuthorizationController(
         var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
         identity.SetClaim(Claims.Subject, user.Id.ToString())
                 .SetClaim(Claims.Email, user.Email)
-                .SetClaim(Claims.Name, user.UserName)
+                .SetClaim(Claims.Name, user.DisplayName)
                 .SetClaim(Claims.Role, user.Role.ToString()); // 클라이언트가 역할별 화면 분기에 사용
 
         var principal = new ClaimsPrincipal(identity);
@@ -99,7 +99,7 @@ public class AuthorizationController(
             var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
             identity.SetClaim(Claims.Subject, user.Id.ToString())
                     .SetClaim(Claims.Email, user.Email)
-                    .SetClaim(Claims.Name, user.UserName)
+                    .SetClaim(Claims.Name, user.DisplayName)
                     .SetClaim(Claims.Role, user.Role.ToString());
 
             var principal = new ClaimsPrincipal(identity);
@@ -136,8 +136,8 @@ public class AuthorizationController(
             var issuedCode = await db.AuthorizationCodes.FirstOrDefaultAsync(c => c.AuthorizationCodeHash == codeHash, HttpContext.RequestAborted);
             if (issuedCode != null)
             {
-                issuedCode.IsRedeemed = true;
-                issuedCode.RedeemedAtUtc = DateTime.UtcNow;
+                issuedCode.IsUsed = true;
+                issuedCode.UsedAtUtc = DateTime.UtcNow;
                 await db.SaveChangesAsync(HttpContext.RequestAborted);
             }
         }
@@ -162,7 +162,7 @@ public class AuthorizationController(
         {
             [Claims.Subject] = user.Id.ToString(),
             [Claims.Email] = user.Email,
-            [Claims.Name] = user.UserName,
+            [Claims.Name] = user.DisplayName,
             [Claims.Role] = user.Role.ToString(),
         });
     }

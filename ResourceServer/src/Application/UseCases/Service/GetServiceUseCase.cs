@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.Service;
 
@@ -26,6 +26,6 @@ public class GetServiceUseCase : IGetServiceUseCase
             return new ServiceDto(string.Empty, DateTime.UtcNow);
         }
 
-        return new ServiceDto(service.Service, service.UpdatedAt);
+        return new ServiceDto(service.Content, service.UpdatedAt);
     }
 }

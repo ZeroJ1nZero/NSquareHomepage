@@ -28,7 +28,7 @@ export const HistorySection: React.FC<HistorySectionProps> = ({ historyList }) =
           ) : (
             historyList.map((item, idx) => (
               <div key={item.id ?? idx} className="timeline-item">
-                <div className="timeline-date">{item.data || item.date || '-'}</div>
+                <div className="timeline-date">{item.eventDate || item.data || item.date || '-'}</div>
                 <div className="timeline-content">{item.content}</div>
               </div>
             ))

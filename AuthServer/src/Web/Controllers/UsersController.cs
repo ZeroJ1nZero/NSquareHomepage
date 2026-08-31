@@ -12,23 +12,11 @@ namespace Web.Controllers;
 [ApiController]
 [Route("api/users")]
 [Produces("application/json")]
-[Tags("목업 개발 항목 - 사용자 및 계정 관리 (User Management)")]
+[Tags("사용자 계정 관리 (User Management)")]
 public class UsersController(
     RegisterUserUseCase registerUseCase,
     AppDbContext db) : ControllerBase
 {
-    /// <summary>
-    /// 신규 사용자 등록 (회원가입)
-    /// </summary>
-    /// <remarks>
-    /// Swagger UI에서 직접 사용자 계정을 생성합니다.
-    /// - **Email**: 로그인 ID (예: user@company.local, user@domain.com 등)
-    /// - **UserName**: 표시 이름 (예: 홍길동, 관리자)
-    /// - **Password**: 비밀번호 (최소 6자 이상)
-    /// - **Role**: 사용자 권한 (Customer, Employee, Admin)
-    /// </remarks>
-    /// <param name="request">가입 정보</param>
-    /// <param name="ct">취소 토큰</param>
     [HttpPost("register")]
     [ProducesResponseType(typeof(UserResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
@@ -36,7 +24,7 @@ public class UsersController(
     {
         var result = await registerUseCase.ExecuteAsync(
             request.Email,
-            request.UserName,
+            request.DisplayName,
             request.Password,
             request.Role,
             ct);
@@ -57,18 +45,12 @@ public class UsersController(
             Message = "사용자가 성공적으로 등록되었습니다.",
             UserId = result.UserId,
             Email = request.Email.Trim(),
-            UserName = request.UserName.Trim(),
+            DisplayName = request.DisplayName.Trim(),
             Role = request.Role,
             RoleName = request.Role.ToString()
         });
     }
 
-    /// <summary>
-    /// 전체 사용자 목록 조회
-    /// </summary>
-    /// <remarks>
-    /// 현재 DB에 등록된 모든 사용자 계정 목록을 조회합니다.
-    /// </remarks>
     [HttpGet]
     [ProducesResponseType(typeof(List<UserSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAllUsers(CancellationToken ct)
@@ -80,7 +62,7 @@ public class UsersController(
             {
                 Id = u.Id,
                 Email = u.Email,
-                UserName = u.UserName,
+                DisplayName = u.DisplayName,
                 Role = u.Role,
                 RoleName = u.Role.ToString()
             })
@@ -89,9 +71,6 @@ public class UsersController(
         return Ok(users);
     }
 
-    /// <summary>
-    /// 특정 사용자 상세 조회
-    /// </summary>
     [HttpGet("{id:long}")]
     [ProducesResponseType(typeof(UserSummaryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -105,18 +84,12 @@ public class UsersController(
         {
             Id = user.Id,
             Email = user.Email,
-            UserName = user.UserName,
+            DisplayName = user.DisplayName,
             Role = user.Role,
             RoleName = user.Role.ToString()
         });
     }
 
-    /// <summary>
-    /// 사용자 역할 변경
-    /// </summary>
-    /// <remarks>
-    /// 사용자의 역할을 변경합니다. (0 = Customer, 1 = Employee, 2 = Admin)
-    /// </remarks>
     [HttpPut("{id:long}/role")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ErrorResponseDto), StatusCodes.Status400BadRequest)]
@@ -143,9 +116,6 @@ public class UsersController(
         });
     }
 
-    /// <summary>
-    /// 사용자 삭제
-    /// </summary>
     [HttpDelete("{id:long}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -171,7 +141,16 @@ public class RegisterUserRequest
 
     [Required(ErrorMessage = "이름은 필수입니다.")]
     [Example("홍길동")]
-    public string UserName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// (하위 호환용 UserName 별칭)
+    /// </summary>
+    public string UserName
+    {
+        get => DisplayName;
+        set { if (!string.IsNullOrWhiteSpace(value) && string.IsNullOrWhiteSpace(DisplayName)) DisplayName = value; }
+    }
 
     [Required(ErrorMessage = "비밀번호는 필수입니다.")]
     [MinLength(6, ErrorMessage = "비밀번호는 6자 이상이어야 합니다.")]
@@ -196,7 +175,8 @@ public class UserSummaryDto
 {
     public long Id { get; set; }
     public string Email { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName => DisplayName;
     public UserRole Role { get; set; }
     public string RoleName { get; set; } = string.Empty;
 }
@@ -207,7 +187,8 @@ public class UserResponseDto
     public string Message { get; set; } = string.Empty;
     public long? UserId { get; set; }
     public string Email { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string UserName => DisplayName;
     public UserRole Role { get; set; }
     public string RoleName { get; set; } = string.Empty;
 }

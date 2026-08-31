@@ -1,22 +1,22 @@
-﻿namespace Domain.Entities;
+namespace Domain.Entities;
 
 public class CompanyService
 {
     public int Id { get; private set; }
-    public string Service { get; private set; } = string.Empty;
+    public string Content { get; private set; } = string.Empty;
     public DateTime UpdatedAt { get; private set; } = DateTime.UtcNow;
 
     public CompanyService() { }
 
-    public CompanyService(string service)
+    public CompanyService(string content)
     {
-        Service = service;
+        Content = content;
         UpdatedAt = DateTime.UtcNow;
     }
 
-    public void Update(string service)
+    public void Update(string content)
     {
-        Service = service;
+        Content = content;
         UpdatedAt = DateTime.UtcNow;
     }
 }

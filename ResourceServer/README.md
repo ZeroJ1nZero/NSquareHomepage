@@ -70,6 +70,6 @@ docker run -d -p 7002:7002 -p 8080:8080 --name resourceserver resourceserver:lat
 
 | 키 | 설명 | 기본값 |
 | :--- | :--- | :--- |
-| `ConnectionStrings:DefaultConnection` | SQL Server / SQLite DB 연결 문자열 | `Server=localhost\SQLEXPRESS;Database=NSquareResourceDb;...` |
+| `ConnectionStrings:DefaultConnection` | MariaDB 연결 문자열 | `Server=localhost;Port=3306;Database=NSquareResourceDb;User=root;Password=1234;` |
 | `Authentication:Authority` | JWT 서명 검증을 위한 IdP 주소 | `https://localhost:7213` |
 | `Authentication:Audience` | 대상 클라이언트 식별자 | `company-homepage` |

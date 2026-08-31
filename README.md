@@ -146,6 +146,24 @@ npm run dev
 
 ---
 
+## 🗄️ 데이터베이스 스키마 및 테이블 요약
+
+| 데이터베이스 | 테이블명 | 설명 |
+| :--- | :--- | :--- |
+| **`authserver`** | `users` | 사용자 계정 마스터 (Email Unique, DisplayName, PasswordHash, Role) |
+| | `loginlogs` | 로그인 시도 감사 로그 (LoginId, IpAddress, Succeeded, AttemptedAtUtc) |
+| | `blockedips` | 차단된 IP 관리 목록 (IpAddress Unique, Reason) |
+| | `authorizationcodes` | 1분 수명의 OIDC PKCE 인가 코드 해시 및 스냅샷 (SHA-256 해시 저장) |
+| | `refreshtokens` | 14일 수명의 리프레시 토큰 해시 및 Token Rotation 추적 |
+| | `openiddictapplications` | 등록된 OIDC 클라이언트 앱 및 콜백 URL 화이트리스트 |
+| | `openiddictauthorizations` | 사용자별 클라이언트 권한 위임/동의 이력 |
+| | `openiddictscopes` | 정의된 권한 스코프 카탈로그 |
+| **`nsquareresourcedb`** | `companyabouts` | 회사 소개 본문 데이터 (`Content`, `UpdatedAt`) |
+| | `companyservices` | 회사 제공 서비스 상세 데이터 (`Content`, `UpdatedAt`) |
+| | `companyhistories` | 회사 연혁 및 주요 성과 내역 (`EventDate`, `Content`, `CreatedAt`) |
+
+---
+
 ## 📂 프로젝트 디렉토리 구조
 
 ```text
@@ -174,11 +192,12 @@ NSquareHomepage/
 │
 ├── 🔐 AuthServer/              # OIDC SSO 인증 서버 (:7213)
 │   └── src/
-│       ├── Domain/             # User, IssuedAuthorizationCode 엔터티
+│       ├── Domain/             # User, AuthorizationCode, RefreshToken, LoginLog, BlockedIp 엔터티
 │       ├── Application/        # 계정 관리 및 인증 로직
-│       ├── Infrastructure/     # MariaDB DbContext, OpenIddict 엔터티
+│       ├── Infrastructure/     # MariaDB DbContext, OpenIddict 설정
 │       └── Web/                # AuthorizationController, AccountController, Login Razor Page
 │
 ├── docs/                       # 상세 아키텍처 및 SSO 파이프라인 명세서
 └── docker-compose.yml          # 전체 컨테이너 오케스트레이션
 ```
+

@@ -8,7 +8,7 @@ interface ServiceSectionProps {
 }
 
 export const ServiceSection: React.FC<ServiceSectionProps> = ({ service, formatDate }) => {
-  const displayText = service.service || '(등록된 주요 서비스가 없습니다)';
+  const displayText = service.content || service.service || '(등록된 주요 서비스가 없습니다)';
 
   return (
     <section id="service" className="content-card">

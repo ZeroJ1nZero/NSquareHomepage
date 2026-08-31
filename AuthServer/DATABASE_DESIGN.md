@@ -155,8 +155,8 @@ sequenceDiagram
 
 ---
 
-#### 📋 2. `AuthorizationCodeIssuanceLog` (인가 코드 전용 - 초단기 1분 수명 & SHA-256 고정)
-* **테이블 분리 및 반정규화 이유**: 1분 수명의 일회용 데이터로 즉시 소진(`IsRedeemed`) 처리됨. 토큰 교환 시 `users` 테이블 JOIN 없이 $O(1)$로 토큰을 만들기 위해 `Subject`, `UserEmail`, `Scope`를 스냅샷 반정규화 보관.
+#### 📋 2. `AuthorizationCodes` (인가 코드 전용 - 초단기 1분 수명 & SHA-256 고정)
+* **테이블 분리 및 반정규화 이유**: 1분 수명의 일회용 데이터로 즉시 소진(`IsUsed`) 처리됨. 토큰 교환 시 `users` 테이블 JOIN 없이 $O(1)$로 토큰을 만들기 위해 `UserId`, `UserEmail`, `Scope`를 스냅샷 반정규화 보관.
 * **SHA-256 고정**: 시스템 자체적으로 SHA-256 단방향 해시 방식을 강제하므로 불필요한 알고리즘 명시 컬럼은 제거하여 경량화.
 
 | 컬럼명 | 타입 | 제약조건 | 존재 이유 |
@@ -166,24 +166,24 @@ sequenceDiagram
 | **`CodeChallengeHash`** | `VARCHAR(128)` | Not Null | PKCE `code_challenge`의 SHA-256 해시 (대조 검증용) |
 | **`ClientId`** | `VARCHAR(128)` | Not Null | 인가를 요청한 클라이언트 ID (`company-homepage`) |
 | **`RedirectUri`** | `VARCHAR(512)` | Not Null | 인가 완료 콜백 URL (토큰 교환 시 위변조 대조) |
-| **`Subject`** | `VARCHAR(128)` | Not Null | 인증된 사용자 ID (반정규화: JWT `sub` 주입용) |
+| **`UserId`** | `VARCHAR(128)` | Not Null | 인증된 사용자 ID (반정규화: JWT `sub` 주입용) |
 | **`UserEmail`** | `VARCHAR(256)` | Not Null | 사용자 이메일 (반정규화: JWT `email` 주입용) |
 | **`Scope`** | `VARCHAR(512)` | Not Null | 승인된 권한 범위 (반정규화: JWT `scope` 주입용) |
 | **`CreatedAtUtc`** | `DATETIME(6)` | Index | 인가 코드 발급 일시 |
 | **`ExpiresAtUtc`** | `DATETIME(6)` | Index | **인가 코드 만료 일시 (1분 수명)** |
-| **`IsRedeemed`** | `TINYINT(1)` | Not Null (기본값: `0`) | **1회용 소진 흔적** (이미 사용된 코드의 재사용 공격 방어) |
-| **`RedeemedAtUtc`** | `DATETIME(6)` | Nullable | 토큰 교환이 완료된 시각 |
+| **`IsUsed`** | `TINYINT(1)` | Not Null (기본값: `0`) | **1회용 소진 흔적** (이미 사용된 코드의 재사용 공격 방어) |
+| **`UsedAtUtc`** | `DATETIME(6)` | Nullable | 토큰 교환이 완료된 시각 |
 
 ---
 
-#### 📋 3. `RefreshTokenLedger` (리프레시 토큰 전용 - 장기 14일 수명)
+#### 📋 3. `RefreshTokens` (리프레시 토큰 전용 - 장기 14일 수명)
 * **테이블 분리 이유**: 인가 코드(1분)와 수명 및 회전(Rotation) 정책이 완전히 다르므로 단독 분리 관리.
 
 | 컬럼명 | 타입 | 제약조건 | 존재 이유 |
 | :--- | :--- | :--- | :--- |
 | **`Id`** | `BIGINT` | PK, Auto Inc | 리프레시 토큰 식별자 |
 | **`RefreshTokenHash`** | `VARCHAR(128)` | **Unique Index** | Refresh Token의 SHA-256 해시 (평문 저장 방지) |
-| **`Subject`** | `VARCHAR(128)` | Index | 토큰 소유 사용자 ID (`users.Id`) |
+| **`UserId`** | `VARCHAR(128)` | Index | 토큰 소유 사용자 ID (`users.Id`) |
 | **`UserEmail`** | `VARCHAR(256)` | Not Null | 사용자 이메일 (반정규화: 재발급 시 User 재조회 생략) |
 | **`ClientId`** | `VARCHAR(128)` | Not Null | 서비스 식별자 (`company-homepage`) |
 | **`Scope`** | `VARCHAR(512)` | Not Null | 승인된 스코프 |
@@ -195,20 +195,20 @@ sequenceDiagram
 
 ---
 
-#### 📋 4. `LoginAuditLog` (로그인 감사 및 침해사고 조사 로그)
-* **반정규화 이유**: 미등록 가짜 계정(`hacker@test.com`) 공격 시도도 외래키 오류 없이 기록하고, 사용자 탈퇴 후에도 감사 스냅샷을 원본 보존하기 위해 `UserName`을 문자열로 반정규화.
+#### 📋 4. `LoginLogs` (로그인 시도 및 접속 로그)
+* **반정규화 이유**: 미등록 가짜 계정(`hacker@test.com`) 공격 시도도 외래키 오류 없이 기록하고, 사용자 탈퇴 후에도 감사 스냅샷을 원본 보존하기 위해 `LoginId`를 문자열로 보관.
 
 | 컬럼명 | 타입 | 제약조건 | 존재 이유 |
 | :--- | :--- | :--- | :--- |
 | **`Id`** | `BIGINT` | PK, Auto Inc | 로그인 로그 식별자 |
-| **`UserName`** | `VARCHAR(256)` | Composite Index | 로그인 시도 계정 문자열 |
+| **`LoginId`** | `VARCHAR(256)` | Composite Index | 로그인 시도 계정 문자열 (이메일/아이디) |
 | **`IpAddress`** | `VARCHAR(45)` | Composite Index | 접속 IP 주소 (공격 발원지 추적) |
 | **`Succeeded`** | `TINYINT(1)` | Not Null | 성공 여부 (`1=성공`, `0=실패`) |
 | **`AttemptedAtUtc`** | `DATETIME(6)` | Composite Index | 시도 일시 (IP/계정별 분당 실패율 집계용) |
 
 ---
 
-#### 📋 5. `IpBlocklist` (IP 차단 방화벽 정책)
+#### 📋 5. `BlockedIps` (IP 차단 방화벽 정책)
 * **테이블 분리 이유**: 미들웨어 최상단에서 매 요청마다 독립적으로 초고속 캐싱 및 필터링하기 위함.
 
 | 컬럼명 | 타입 | 제약조건 | 존재 이유 |
@@ -277,7 +277,7 @@ sequenceDiagram
 ---
 
 #### 📋 9. `OpenIddictTokens` (OIDC 프레임워크 내부 토큰 아티팩트 저장소 - `DisableTokenStorage()` 적용)
-* **테이블 존재 이유 및 운영 정책**: OpenIddict 기본 스키마 테이블이나, 불필요한 2중 저장 방지 및 성능 최적화를 위해 `options.DisableTokenStorage()`가 적용되었습니다. 인가 코드는 `AuthorizationCodeIssuanceLog`, 리프레시 토큰은 `RefreshTokenLedger`에서 전담 관리합니다.
+* **테이블 존재 이유 및 운영 정책**: OpenIddict 기본 스키마 테이블이나, 불필요한 2중 저장 방지 및 성능 최적화를 위해 `options.DisableTokenStorage()`가 적용되었습니다. 인가 코드는 `AuthorizationCodes`, 리프레시 토큰은 `RefreshTokens`에서 전담 관리합니다.
 
 | 컬럼명 | 타입 | 성격 | 존재 이유 |
 | :--- | :--- | :---: | :--- |
@@ -324,15 +324,15 @@ sequenceDiagram
 ```sql
 -- [authserver DB]
 ALTER TABLE `users` ADD UNIQUE INDEX `UX_users_Email` (`Email`);
-ALTER TABLE `IpBlocklist` ADD UNIQUE INDEX `UX_IpBlocklist_IpAddress` (`IpAddress`);
-ALTER TABLE `LoginAuditLog` ADD INDEX `IX_LoginAuditLog_AttemptedAtUtc` (`AttemptedAtUtc`);
-ALTER TABLE `LoginAuditLog` ADD INDEX `IX_LoginAuditLog_IpAddress_AttemptedAtUtc` (`IpAddress`, `AttemptedAtUtc`);
-ALTER TABLE `LoginAuditLog` ADD INDEX `IX_LoginAuditLog_UserName_AttemptedAtUtc` (`UserName`, `AttemptedAtUtc`);
-ALTER TABLE `AuthorizationCodeIssuanceLog` ADD UNIQUE INDEX `UX_AuthorizationCodeIssuanceLog_AuthorizationCodeHash` (`AuthorizationCodeHash`);
-ALTER TABLE `AuthorizationCodeIssuanceLog` ADD INDEX `IX_AuthorizationCodeIssuanceLog_ExpiresAtUtc` (`ExpiresAtUtc`);
-ALTER TABLE `RefreshTokenLedger` ADD UNIQUE INDEX `UX_RefreshTokenLedger_RefreshTokenHash` (`RefreshTokenHash`);
-ALTER TABLE `RefreshTokenLedger` ADD INDEX `IX_RefreshTokenLedger_Subject` (`Subject`);
-ALTER TABLE `RefreshTokenLedger` ADD INDEX `IX_RefreshTokenLedger_ExpiresAtUtc` (`ExpiresAtUtc`);
+ALTER TABLE `BlockedIps` ADD UNIQUE INDEX `UX_BlockedIps_IpAddress` (`IpAddress`);
+ALTER TABLE `LoginLogs` ADD INDEX `IX_LoginLogs_AttemptedAtUtc` (`AttemptedAtUtc`);
+ALTER TABLE `LoginLogs` ADD INDEX `IX_LoginLogs_IpAddress_AttemptedAtUtc` (`IpAddress`, `AttemptedAtUtc`);
+ALTER TABLE `LoginLogs` ADD INDEX `IX_LoginLogs_LoginId_AttemptedAtUtc` (`LoginId`, `AttemptedAtUtc`);
+ALTER TABLE `AuthorizationCodes` ADD UNIQUE INDEX `UX_AuthorizationCodes_AuthorizationCodeHash` (`AuthorizationCodeHash`);
+ALTER TABLE `AuthorizationCodes` ADD INDEX `IX_AuthorizationCodes_ExpiresAtUtc` (`ExpiresAtUtc`);
+ALTER TABLE `RefreshTokens` ADD UNIQUE INDEX `UX_RefreshTokens_RefreshTokenHash` (`RefreshTokenHash`);
+ALTER TABLE `RefreshTokens` ADD INDEX `IX_RefreshTokens_UserId` (`UserId`);
+ALTER TABLE `RefreshTokens` ADD INDEX `IX_RefreshTokens_ExpiresAtUtc` (`ExpiresAtUtc`);
 ALTER TABLE `OpenIddictAuthorizations` ADD INDEX `IX_OpenIddictAuthorizations_Subject` (`Subject`);
 ALTER TABLE `OpenIddictAuthorizations` ADD INDEX `IX_OpenIddictAuthorizations_ApplicationId` (`ApplicationId`);
 ALTER TABLE `OpenIddictTokens` ADD INDEX `IX_OpenIddictTokens_Subject` (`Subject`);

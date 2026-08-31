@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Domain.Entities;
 
@@ -12,7 +12,7 @@ public class CompanyServiceConfiguration : IEntityTypeConfiguration<CompanyServi
 
         builder.HasKey(c => c.Id);
 
-        builder.Property(c => c.Service)
+        builder.Property(c => c.Content)
             .HasMaxLength(4000);
 
         builder.Property(c => c.UpdatedAt)

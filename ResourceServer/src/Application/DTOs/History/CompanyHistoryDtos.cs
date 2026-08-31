@@ -2,9 +2,14 @@ using System.Text.Json.Serialization;
 
 namespace Application.DTOs.History;
 
-public record CompanyHistoryDto(int Id, DateOnly Date, string Content, DateTime CreatedAt);
-public record CreateCompanyHistoryDto(DateOnly Date, string Content);
-public record UpdateCompanyHistoryDto(DateOnly Date, string Content);
+public record CompanyHistoryDto(int Id, DateOnly EventDate, string Content, DateTime CreatedAt)
+{
+    [JsonPropertyName("date")]
+    public DateOnly Date => EventDate;
+}
+
+public record CreateCompanyHistoryDto(DateOnly EventDate, string Content);
+public record UpdateCompanyHistoryDto(DateOnly EventDate, string Content);
 
 public class HistoryItemDto
 {
@@ -13,10 +18,17 @@ public class HistoryItemDto
     [JsonPropertyName("id")]
     public int? Id { get; set; }
 
+    [JsonPropertyName("eventDate")]
+    public DateOnly EventDate
+    {
+        get => _data ?? DateOnly.FromDateTime(DateTime.Today);
+        set => _data = value;
+    }
+
     [JsonPropertyName("data")]
     public DateOnly Data
     {
-        get => _data ?? DateOnly.FromDateTime(DateTime.Today);
+        get => EventDate;
         set => _data = value;
     }
 
@@ -32,15 +44,15 @@ public class HistoryItemDto
     public string Content { get; set; } = string.Empty;
 
     public HistoryItemDto() { }
-    public HistoryItemDto(DateOnly data, string content)
+    public HistoryItemDto(DateOnly eventDate, string content)
     {
-        _data = data;
+        _data = eventDate;
         Content = content;
     }
-    public HistoryItemDto(int id, DateOnly data, string content)
+    public HistoryItemDto(int id, DateOnly eventDate, string content)
     {
         Id = id;
-        _data = data;
+        _data = eventDate;
         Content = content;
     }
 }

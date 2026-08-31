@@ -60,6 +60,7 @@ public static class DependencyInjection
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = fallbackKey,
                     ValidateIssuer = false, // 다중 호스트(7213/5123) 허용
                     ValidateAudience = false,
                     ValidateLifetime = true,

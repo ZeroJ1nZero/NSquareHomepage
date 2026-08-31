@@ -9,6 +9,7 @@ using Application.UseCases.Public;
 namespace Web.Controllers;
 
 [ApiController]
+[Tags("회사 연혁 (Company History)")]
 public class HistoriesController : ControllerBase
 {
     private readonly IGetCompanyHistoriesUseCase _getHistoriesUseCase;
@@ -27,7 +28,6 @@ public class HistoriesController : ControllerBase
 
     [HttpGet("api/public/company-histories")]
     [AllowAnonymous]
-    [Tags("공개 데이터 조회")]
     public async Task<ActionResult<HistoryContainerDto>> GetHistories(CancellationToken cancellationToken)
     {
         var result = await _getHistoriesUseCase.ExecuteAsync(cancellationToken);
@@ -35,7 +35,6 @@ public class HistoriesController : ControllerBase
     }
 
     [HttpPut("api/admin/company-histories")]
-    [Tags("관리자 리소스 CRUD")]
     public async Task<IActionResult> SaveHistories(
         [FromBody] SaveHistoryRequestDto dto,
         CancellationToken cancellationToken)
@@ -72,7 +71,7 @@ public class HistoriesController : ControllerBase
             {
                 message = "회사 연혁 전용 세션 쿠키(.Nsq.History.Session)가 존재하지 않아 인증 서버(IdP)로 리다이렉트합니다.",
                 service = "history",
-                authorize_url = authorizeUrl,
+                authorize_url =  authorizeUrl,
                 client_id = "company-homepage",
                 response_type = "code",
                 code_challenge = challenge,
@@ -87,7 +86,6 @@ public class HistoriesController : ControllerBase
     }
 
     [HttpDelete("api/admin/company-histories/{id:int}")]
-    [Tags("관리자 리소스 CRUD")]
     public async Task<IActionResult> DeleteHistory(
         int id,
         [FromServices] IDeleteCompanyHistoryUseCase deleteUseCase,

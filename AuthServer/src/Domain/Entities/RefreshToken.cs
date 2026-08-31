@@ -1,7 +1,7 @@
 namespace Domain.Entities;
 
 /// <summary>
-/// OIDC Refresh Token 영속화 및 회전(Rotation)/폐기(Revocation) 관리 엔티티 (MariaDB 영속화: refreshtokens 테이블)
+/// OIDC Refresh Token 영속화 및 회전(Rotation)/폐기(Revocation) 관리 엔티티 (MariaDB 영속화: RefreshTokens 테이블)
 /// </summary>
 public class RefreshToken
 {
@@ -13,9 +13,19 @@ public class RefreshToken
     public string RefreshTokenHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// 발급 대상 사용자 식별자 (User Subject / ID)
+    /// 발급 대상 사용자 식별자 (User ID)
     /// </summary>
-    public string Subject { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// (하위 호환용 Subject 별칭)
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string Subject
+    {
+        get => UserId;
+        set => UserId = value;
+    }
 
     /// <summary>
     /// 발급 대상 사용자 이메일

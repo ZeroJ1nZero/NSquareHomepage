@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.History;
 
@@ -26,6 +26,6 @@ public class GetCompanyHistoryByIdUseCase : IGetCompanyHistoryByIdUseCase
             return null;
         }
 
-        return new CompanyHistoryDto(history.Id, history.Date, history.Content, history.CreatedAt);
+        return new CompanyHistoryDto(history.Id, history.EventDate, history.Content, history.CreatedAt);
     }
 }

@@ -182,7 +182,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                     histories.map((item, idx) => (
                       <div key={item.id ?? idx} className="timeline-item" style={{ position: 'relative' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div className="timeline-date">{item.data || item.date || '-'}</div>
+                          <div className="timeline-date">{item.eventDate || item.data || item.date || '-'}</div>
                           {item.id !== undefined && (
                             <button
                               onClick={() => handleDelete(item.id!)}

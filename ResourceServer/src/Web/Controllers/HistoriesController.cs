@@ -7,7 +7,7 @@ namespace Web.Controllers;
 
 [ApiController]
 [Route("api/Home/history")]
-[Tags("1. [파이프라인 Step 10] Zero-Trust 리소스 CRUD (JWT Bearer 검증)")]
+[Tags("회사 연혁 (Company History)")]
 public class HistoriesController : ControllerBase
 {
     [HttpGet]
@@ -17,7 +17,7 @@ public class HistoriesController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await useCase.ExecuteAsync(cancellationToken);
-        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.Date, h.Content)).ToList();
+        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.EventDate, h.Content)).ToList();
         return Ok(new HistoryContainerDto(historyItems));
     }
 
@@ -33,12 +33,12 @@ public class HistoriesController : ControllerBase
         {
             foreach (var item in dto.History)
             {
-                await createUseCase.ExecuteAsync(new CreateCompanyHistoryDto(item.Data, item.Content), cancellationToken);
+                await createUseCase.ExecuteAsync(new CreateCompanyHistoryDto(item.EventDate, item.Content), cancellationToken);
             }
         }
 
         var result = await getUseCase.ExecuteAsync(cancellationToken);
-        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.Date, h.Content)).ToList();
+        var historyItems = result.Select(h => new HistoryItemDto(h.Id, h.EventDate, h.Content)).ToList();
         return Ok(new HistoryContainerDto(historyItems));
     }
 

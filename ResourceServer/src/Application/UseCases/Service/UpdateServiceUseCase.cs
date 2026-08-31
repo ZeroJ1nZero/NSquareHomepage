@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.Service;
 using Domain.Entities;
@@ -24,16 +24,16 @@ public class UpdateServiceUseCase : IUpdateServiceUseCase
         var service = await _context.CompanyServices.FirstOrDefaultAsync(cancellationToken);
         if (service == null)
         {
-            service = new CompanyService(dto.Service);
+            service = new CompanyService(dto.Content);
             _context.CompanyServices.Add(service);
         }
         else
         {
-            service.Update(dto.Service);
+            service.Update(dto.Content);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new ServiceDto(service.Service, service.UpdatedAt);
+        return new ServiceDto(service.Content, service.UpdatedAt);
     }
 }

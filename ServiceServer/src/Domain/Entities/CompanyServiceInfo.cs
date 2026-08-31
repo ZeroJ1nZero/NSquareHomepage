@@ -1,13 +1,14 @@
-﻿namespace Domain.Entities;
+namespace Domain.Entities;
 
 public class CompanyServiceInfo
 {
-    public string Service { get; }
+    public string Content { get; }
+    public string Service => Content;
     public DateTime UpdatedAt { get; }
 
-    public CompanyServiceInfo(string service, DateTime updatedAt)
+    public CompanyServiceInfo(string content, DateTime updatedAt)
     {
-        Service = service;
+        Content = content;
         UpdatedAt = updatedAt;
     }
 }

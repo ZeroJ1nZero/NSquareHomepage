@@ -7,7 +7,7 @@ namespace Web.Controllers;
 
 [ApiController]
 [Route("api/Home/about")]
-[Tags("1. [파이프라인 Step 10] Zero-Trust 리소스 CRUD (JWT Bearer 검증)")]
+[Tags("회사 소개 (Company About)")]
 public class AboutController : ControllerBase
 {
     [HttpGet]

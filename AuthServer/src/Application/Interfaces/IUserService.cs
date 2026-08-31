@@ -10,5 +10,5 @@ public record UserCreationResult(bool Succeeded, IReadOnlyList<string> Errors, l
 
 public interface IUserService
 {
-    Task<UserCreationResult> CreateUserAsync(string email, string userName, string password, UserRole role = UserRole.Customer, CancellationToken ct = default);
+    Task<UserCreationResult> CreateUserAsync(string email, string displayName, string password, UserRole role = UserRole.Customer, CancellationToken ct = default);
 }

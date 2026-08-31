@@ -9,6 +9,7 @@ using Application.UseCases.Public;
 namespace Web.Controllers;
 
 [ApiController]
+[Tags("회사 소개 (Company About)")]
 public class AboutController : ControllerBase
 {
     private readonly IGetCompanyAboutUseCase _getAboutUseCase;
@@ -27,7 +28,6 @@ public class AboutController : ControllerBase
 
     [HttpGet("api/public/company-about")]
     [AllowAnonymous]
-    [Tags("공개 데이터 조회")]
     public async Task<ActionResult<AboutDto>> GetAbout(CancellationToken cancellationToken)
     {
         var result = await _getAboutUseCase.ExecuteAsync(cancellationToken);
@@ -35,7 +35,6 @@ public class AboutController : ControllerBase
     }
 
     [HttpPut("api/admin/company-about")]
-    [Tags("관리자 리소스 CRUD")]
     public async Task<IActionResult> UpdateAbout(
         [FromBody] UpdateAboutDto dto,
         CancellationToken cancellationToken)

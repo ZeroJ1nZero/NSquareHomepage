@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Domain.Entities;
 
@@ -12,7 +12,7 @@ public class CompanyHistoryConfiguration : IEntityTypeConfiguration<CompanyHisto
 
         builder.HasKey(h => h.Id);
 
-        builder.Property(h => h.Date)
+        builder.Property(h => h.EventDate)
             .IsRequired();
 
         builder.Property(h => h.Content)

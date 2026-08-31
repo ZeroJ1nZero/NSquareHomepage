@@ -1,13 +1,14 @@
-﻿namespace Domain.Entities;
+namespace Domain.Entities;
 
 public class CompanyHistoryItem
 {
-    public string Date { get; }
+    public string EventDate { get; }
+    public string Date => EventDate;
     public string Content { get; }
 
-    public CompanyHistoryItem(string date, string content)
+    public CompanyHistoryItem(string eventDate, string content)
     {
-        Date = date;
+        EventDate = eventDate;
         Content = content;
     }
 }

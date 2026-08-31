@@ -13,7 +13,6 @@ public class CompanyAboutConfiguration : IEntityTypeConfiguration<CompanyAbout>
         builder.HasKey(c => c.Id);
 
         builder.Property(c => c.Content)
-            .HasColumnName("Introduction")
             .HasMaxLength(4000);
 
         builder.Property(c => c.UpdatedAt)

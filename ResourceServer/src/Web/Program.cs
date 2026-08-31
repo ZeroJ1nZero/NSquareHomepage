@@ -18,6 +18,9 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    try { dbContext.Database.ExecuteSqlRaw("ALTER TABLE `CompanyAbouts` CHANGE COLUMN `Introduction` `Content` VARCHAR(4000) NOT NULL;"); } catch { }
+    try { dbContext.Database.ExecuteSqlRaw("ALTER TABLE `CompanyServices` CHANGE COLUMN `Service` `Content` VARCHAR(4000) NOT NULL;"); } catch { }
+    try { dbContext.Database.ExecuteSqlRaw("ALTER TABLE `CompanyHistories` CHANGE COLUMN `Date` `EventDate` DATE NOT NULL;"); } catch { }
     dbContext.Database.EnsureCreated();
 
     if (!dbContext.CompanyAbouts.Any())

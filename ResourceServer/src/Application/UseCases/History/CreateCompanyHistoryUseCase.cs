@@ -1,4 +1,4 @@
-﻿using Application.Interfaces;
+using Application.Interfaces;
 using Application.DTOs.History;
 using Domain.Entities;
 
@@ -20,10 +20,10 @@ public class CreateCompanyHistoryUseCase : ICreateCompanyHistoryUseCase
 
     public async Task<CompanyHistoryDto> ExecuteAsync(CreateCompanyHistoryDto dto, CancellationToken cancellationToken = default)
     {
-        var history = new CompanyHistory(dto.Date, dto.Content);
+        var history = new CompanyHistory(dto.EventDate, dto.Content);
         _context.CompanyHistories.Add(history);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new CompanyHistoryDto(history.Id, history.Date, history.Content, history.CreatedAt);
+        return new CompanyHistoryDto(history.Id, history.EventDate, history.Content, history.CreatedAt);
     }
 }

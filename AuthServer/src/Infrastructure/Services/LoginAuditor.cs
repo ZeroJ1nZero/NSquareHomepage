@@ -6,11 +6,11 @@ namespace Infrastructure.Services;
 
 public class LoginAuditor(AppDbContext db) : ILoginAuditor
 {
-    public async Task RecordAsync(string userName, string ipAddress, bool succeeded, CancellationToken ct = default)
+    public async Task RecordAsync(string loginId, string ipAddress, bool succeeded, CancellationToken ct = default)
     {
         db.LoginLogs.Add(new LoginLog
         {
-            UserName = userName,
+            LoginId = loginId,
             IpAddress = ipAddress,
             Succeeded = succeeded,
             AttemptedAtUtc = DateTime.UtcNow,

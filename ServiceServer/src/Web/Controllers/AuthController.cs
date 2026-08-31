@@ -46,19 +46,8 @@ public class AuthController : ControllerBase
 
     private string DefaultRedirectUri => _configuration["Authentication:RedirectUri"] ?? "http://localhost:3000/callback";
 
-    /// <summary>
-    /// [PKCE/CSRF 키 발급 및 302 리다이렉트 생성] 서비스 세션 쿠키 검증 및 미보유 시 인증 서버(IdP) 인가 주소와 PKCE/CSRF 키 반환 및 302 리다이렉트
-    /// </summary>
-    /// <remarks>
-    /// 1. 암호학적 난수로 **PKCE 원본키(`pkce_verifier`)**, **해시키(`code_challenge`)**, **CSRF 검증키(`state`)**를 생성합니다.
-    /// 2. 서비스 서버 세션 메모리에 `pkce_verifier`와 `oauth_state`, 그리고 요청된 `target_service`를 안전하게 저장합니다.
-    /// 3. 클라이언트에게 인증 서버로 이동할 **`authorizeUrl` 및 파라미터 일체**를 반환하거나 302 리다이렉트합니다.
-    /// </remarks>
-    /// <param name="returnUrl">로그인 완료 후 최종 복귀할 페이지 주소 (기본: /)</param>
-    /// <param name="service">대상 서비스 식별자 (about, service, history, 또는 SSO 로그인 버튼 클릭 시 none)</param>
-    /// <param name="autoRedirect">브라우저 자동 302 리다이렉트 여부 (기본: false)</param>
     [HttpGet("api/auth/access-sso")]
-    [Tags("Step 01. PKCE/CSRF 키 발급 및 302 리다이렉트 생성 (Initiate SSO)")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [Produces("application/json")]
     [ProducesResponseType(typeof(StartSsoResultDto), StatusCodes.Status200OK)]
     public IActionResult StartSso([FromQuery] string? returnUrl = null, [FromQuery] string? service = null, [FromQuery] bool autoRedirect = false)
@@ -77,21 +66,8 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
-
-
-    /// <summary>
-    /// [위치별 서비스 세션 쿠키 발급] 인증 서버(IdP)에서 발급받은 Access Token, ID Token, Refresh Token을 수신하여 위치(About, Service, History)에 맞는 서비스 세션 쿠키 발급
-    /// </summary>
-    /// <remarks>
-    /// 1. 인증 서버(IdP)의 Step 07에서 발급된 **`access_token`, `id_token`, `refresh_token`**을 JSON Body로 수신하여 JWT 클레임(신원/역할)을 파싱합니다.
-    /// 2. 서비스 서버 세션 메모리에 토큰 세트와 사용자 정보를 안전하게 보관합니다.
-    /// 3. 요청된 위치(`service`: about, service, history, 또는 default)에 맞는 서비스 세션 쿠키(`.Nsq.About.Session`, `.Nsq.Service.Session`, `.Nsq.History.Session`, `.NsqHomepage.ServiceSession`)를 발급합니다.
-    /// </remarks>
-    /// <param name="request">Access Token, ID Token, Refresh Token, 대상 서비스 위치 DTO</param>
-    /// <param name="service">대상 서비스 위치 (쿼리로 전달 시)</param>
-    /// <param name="cancellationToken">취소 토큰</param>
     [HttpPost("api/auth/oidc-callback")]
-    [Tags("Step 08. 위치별 서비스 세션 쿠키 발급 (Issue Per-Service Session Cookie)")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> IssueServiceSessionCookie(
@@ -161,12 +137,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [CSRF State 검증 확인] 특정 state 값이 현재 서비스 서버 세션과 일치하는지 단독 검증
-    /// </summary>
-    /// <param name="state">검증할 state 값 (생략 시 세션에 저장된 oauth_state 값으로 자동 검증)</param>
     [HttpGet("api/auth/verify-state")]
-    [Tags("Step 05. CSRF State 일치 검증 (Verify CSRF State)")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(typeof(VerifyStateResultDto), StatusCodes.Status200OK)]
     public IActionResult VerifyState([FromQuery] string? state = null)
     {
@@ -178,14 +150,8 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// [서버 간 PKCE 토큰 교환 검증] 인가 코드 및 PKCE 원본키(code_verifier) Back-channel 토큰 교환 (Access/Refresh Token 수신)
-    /// </summary>
-    /// <remarks>
-    /// 서비스 서버(:7001)가 인증 서버(:7213)로 인가 코드와 PKCE 원본키를 백채널 직통신으로 전송하여 Access Token과 Refresh Token을 발급받고 세션을 갱신합니다.
-    /// </remarks>
     [HttpPost("api/auth/validate-pkce")]
-    [Tags("Step 06. 서버 간 PKCE 토큰 교환 검증 (Server-to-Server PKCE Token Exchange Validation)")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     public async Task<IActionResult> BackchannelTokenExchange([FromBody] BackchannelExchangeDto request, CancellationToken cancellationToken)
     {
         var result = await _exchangeTokenUseCase.ExecuteAsync(request.Code, request.CodeVerifier, request.RedirectUri, HttpContext, cancellationToken);
@@ -240,14 +206,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [세션 쿠키 기반 사용자 신원/권한 확인] 클라이언트가 제출한 서비스 세션 쿠키의 유효성 및 사용자 정보(Role, Email, Name) 확인
-    /// </summary>
-    /// <remarks>
-    /// 브라우저가 전송한 서비스 세션 쿠키 또는 서버 세션 메모리를 검증하여 현재 활성화된 세션 및 사용자 정보(Role, Email, Name)를 반환합니다.
-    /// </remarks>
     [HttpGet("api/auth/user-identity")]
-    [Tags("Step 09. 세션 쿠키 기반 사용자 신원/권한 확인 (User Identity)")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> GetUserIdentity()
     {
@@ -308,11 +268,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// Refresh Token을 이용하여 Access Token 재발급 및 세션 갱신
-    /// </summary>
     [HttpPost("api/auth/refresh")]
-    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [Authorize(AuthenticationSchemes = CookieAuthenticationDefaults.AuthenticationScheme)]
     public async Task<IActionResult> RefreshToken(CancellationToken cancellationToken)
     {
@@ -347,14 +304,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [세션 메모리 조회] 서비스 서버 메모리 세션(ISession)에 보관된 OIDC 토큰 세트 확인
-    /// </summary>
-    /// <remarks>
-    /// 서비스 서버의 세션 메모리에 보관된 `access_token`, `id_token`, `refresh_token` 및 유효기간을 실시간으로 확인합니다.
-    /// </remarks>
     [HttpGet("api/auth/session-tokens")]
-    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     public IActionResult GetSessionTokens()
     {
         var accessToken = HttpContext.Session.GetString("access_token");
@@ -395,14 +346,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [세션 종료] 모든 서비스 세션 쿠키 파기 및 전역 SSO 로그아웃 URL 반환 (OWASP 보안 표준 POST 전용)
-    /// </summary>
-    /// <remarks>
-    /// Logout-CSRF 공격 방어를 위해 POST 요청만 허용하며, 발급된 모든 서비스 세션 쿠키(.Nsq.About.Session, .Nsq.Service.Session, .Nsq.History.Session)를 파기하고 전역 SSO 로그아웃 URL을 반환합니다.
-    /// </remarks>
     [HttpPost("api/auth/logout")]
-    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout([FromQuery] string? returnUrl = null)
     {
@@ -449,19 +394,8 @@ public class AuthController : ControllerBase
         });
     }
 
-    /// <summary>
-    /// [로컬 세션 로그아웃] SSO 쿠키를 유지한 채 서비스 세션 쿠키만 파기 (Keep SSO Cookie)
-    /// </summary>
-    /// <remarks>
-    /// 인증 서버(IdP)의 전역 SSO 세션 쿠키(`AuthServer_SSO_Cookie`)는 그대로 유지하면서,
-    /// 서비스 서버의 작업 세션 쿠키(`.Nsq.About.Session`, `.Nsq.Service.Session`, `.Nsq.History.Session`) 및 세션 메모리만 파기합니다.
-    /// 
-    /// **[특징]**
-    /// - AuthServer 전역 로그아웃을 수행하지 않으므로 SSO 쿠키가 보존됩니다.
-    /// - 이후 서비스 재접근 시 로그인 화면 없이 즉시 Silent SSO로 새로운 세션 쿠키를 발급받을 수 있습니다.
-    /// </remarks>
     [HttpPost("api/auth/local-logout")]
-    [Tags("로그아웃, 토큰 확인 및 갱신")]
+    [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> LocalLogout([FromQuery] string? returnUrl = null)
     {

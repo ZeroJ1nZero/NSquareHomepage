@@ -1,7 +1,7 @@
 namespace Domain.Entities;
 
 /// <summary>
-/// OIDC 인가 코드 및 PKCE Code Challenge 해시 저장 엔티티 (MariaDB 영속화: authorizationcodes 테이블)
+/// OIDC 인가 코드 및 PKCE Code Challenge 해시 저장 엔티티 (MariaDB 영속화: AuthorizationCodes 테이블)
 /// </summary>
 public class AuthorizationCode
 {
@@ -28,9 +28,19 @@ public class AuthorizationCode
     public string RedirectUri { get; set; } = string.Empty;
 
     /// <summary>
-    /// 인증된 사용자 식별자 (User Subject / ID)
+    /// 인증된 사용자 식별자 (User ID)
     /// </summary>
-    public string Subject { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// (하위 호환용 Subject 별칭)
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public string Subject
+    {
+        get => UserId;
+        set => UserId = value;
+    }
 
     /// <summary>
     /// 인증된 사용자 이메일
@@ -55,10 +65,30 @@ public class AuthorizationCode
     /// <summary>
     /// 토큰 교환 완료(사용) 여부 (1회용 소진)
     /// </summary>
-    public bool IsRedeemed { get; set; } = false;
+    public bool IsUsed { get; set; } = false;
 
     /// <summary>
     /// 토큰 교환 완료 일시
     /// </summary>
-    public DateTime? RedeemedAtUtc { get; set; }
+    public DateTime? UsedAtUtc { get; set; }
+
+    /// <summary>
+    /// (하위 호환용 별칭)
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool IsRedeemed
+    {
+        get => IsUsed;
+        set => IsUsed = value;
+    }
+
+    /// <summary>
+    /// (하위 호환용 별칭)
+    /// </summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public DateTime? RedeemedAtUtc
+    {
+        get => UsedAtUtc;
+        set => UsedAtUtc = value;
+    }
 }

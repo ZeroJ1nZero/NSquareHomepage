@@ -23,8 +23,10 @@ src/
 ├── Domain/                              # 가장 안쪽. 아무것도 참조하지 않는 순수 엔티티
 │   └── Entities/
 │       ├── User.cs                      # 사용자 + UserRole enum
-│       ├── LoginLog.cs                  # 로그인 시도 기록 (loginlog)
-│       └── BlockedIp.cs                 # 차단 IP
+│       ├── AuthorizationCode.cs         # 1회성 인가 코드 및 PKCE 해시 (authorizationcodes)
+│       ├── RefreshToken.cs              # 리프레시 토큰 및 Token Rotation (refreshtokens)
+│       ├── LoginLog.cs                  # 로그인 시도 기록 (loginlogs)
+│       └── BlockedIp.cs                 # 차단 IP (blockedips)
 │
 ├── Application/                         # 업무 규칙. Domain만 참조
 │   ├── Interfaces/
@@ -254,13 +256,13 @@ Body: { "role": 0 | 1 | 2 }
 |---|---|---|
 | `Id` | bigint, PK, 자동증가 | 사용자 고유 번호. OIDC 토큰의 `sub` 클레임으로 나감 |
 | `Email` | varchar(256), **유니크** | **로그인 ID**. 이메일 형식 강제 안 함(아이디처럼 사용 가능). 유니크 인덱스가 중복 가입의 최종 방어선 |
-| `UserName` | varchar(256) | 표시 이름. 토큰의 `name` 클레임으로 나감 |
+| `DisplayName` | varchar(256) | 표시 이름. 토큰의 `name` 클레임으로 나감 |
 | `PasswordHash` | longtext | PBKDF2 해시(솔트 포함). 평문 저장 안 함 |
 | `Role` | int | 역할 enum: `0=Customer(고객, 가입 기본값)` `1=Employee(직원)` `2=Admin(관리자)`. **숫자가 DB에 저장되므로 enum 멤버의 번호를 나중에 바꾸면 안 됨** (새 역할은 뒤 번호로 추가) |
 
-### AuthorizationCodeIssuanceLog — 인가 코드 발급 및 1회용 소진 원장
+### AuthorizationCodes — 인가 코드 발급 및 1회용 소진 관리
 
-1분 수명의 일회용 인가 코드 해시 및 스냅샷 저장소. 토큰 교환 즉시 `IsRedeemed = 1`로 소진 처리.
+1분 수명의 일회용 인가 코드 해시 및 스냅샷 저장소. 토큰 교환 즉시 `IsUsed = 1`로 소진 처리.
 
 | 컬럼 | 타입 | 하는 일 |
 |---|---|---|
@@ -268,37 +270,37 @@ Body: { "role": 0 | 1 | 2 }
 | `AuthorizationCodeHash` | varchar(128), **유니크** | 인가 코드 SHA-256 해시 (평문 미저장) |
 | `CodeChallengeHash` | varchar(128) | PKCE `code_challenge` SHA-256 해시 (토큰 교환 시 대조) |
 | `ClientId` / `RedirectUri` | varchar | 인가 요청 클라이언트 및 콜백 URL |
-| `Subject` / `UserEmail` / `Scope` | varchar | 사용자 ID, 이메일, 스코프 스냅샷 |
+| `UserId` / `UserEmail` / `Scope` | varchar | 사용자 ID, 이메일, 스코프 스냅샷 |
 | `CreatedAtUtc` / `ExpiresAtUtc` | datetime(6) | 발급 일시 및 1분 만료 시각 |
-| `IsRedeemed` / `RedeemedAtUtc` | tinyint(1) / datetime(6) | 1회용 소진 플래그 및 교환 완료 시각 |
+| `IsUsed` / `UsedAtUtc` | tinyint(1) / datetime(6) | 1회용 소진 플래그 및 교환 완료 시각 |
 
-### RefreshTokenLedger — 리프레시 토큰 관리 원장
+### RefreshTokens — 리프레시 토큰 관리
 
-14일 수명의 리프레시 토큰 해시 원장. Token Rotation 정책 적용.
+14일 수명의 리프레시 토큰 해시 저장소. Token Rotation 정책 적용.
 
 | 컬럼 | 타입 | 하는 일 |
 |---|---|---|
 | `Id` | bigint, PK, 자동증가 | 토큰 식별자 |
 | `RefreshTokenHash` | varchar(128), **유니크** | Refresh Token SHA-256 해시 |
-| `Subject` / `UserEmail` | varchar | 소유 사용자 ID 및 이메일 |
+| `UserId` / `UserEmail` | varchar | 소유 사용자 ID 및 이메일 |
 | `ClientId` / `Scope` | varchar | 대상 클라이언트 및 스코프 |
 | `CreatedAtUtc` / `ExpiresAtUtc` | datetime(6) | 발급 일시 및 14일 만료 시각 |
 | `IsRevoked` / `RevokedAtUtc` | tinyint(1) / datetime(6) | 폐기 플래그 및 폐기 시각 |
 | `ReplacedByTokenHash` | varchar(128) | 교체 발급된 차기 토큰 해시 (회전 추적) |
 
-### LoginAuditLog — 로그인 시도 감사 기록
+### LoginLogs — 로그인 시도 및 접속 기록
 
 성공/실패 모든 시도가 기록된다. 침입 시도 추적·계정 잠금 도입 시 근거 데이터.
 
 | 컬럼 | 타입 | 하는 일 |
 |---|---|---|
 | `Id` | bigint, PK, 자동증가 | |
-| `UserName` | varchar(256) | 시도한 로그인 ID (존재하지 않는 계정 입력도 그대로 기록됨) |
+| `LoginId` | varchar(256) | 시도한 로그인 ID (존재하지 않는 계정 입력도 그대로 기록됨) |
 | `IpAddress` | varchar(45) | 요청 IP. 45자 = IPv6 최대 길이. 로컬 접속은 `::1`(IPv6 루프백)로 찍힘 |
 | `Succeeded` | tinyint(1) | 성공 여부 |
 | `AttemptedAtUtc` | datetime(6), 인덱스 | 시도 시각(UTC). 기간 조회용 인덱스 |
 
-### IpBlocklist — 차단 IP (수동 운영 테이블)
+### BlockedIps — 차단 IP (수동 운영 테이블)
 
 행을 넣으면 그 IP의 모든 요청이 403. **자동 차단/자동 해제 없음** — 운영자가
 직접 넣고 뺀다. 미들웨어가 1분 캐시로 검사하므로 반영이 최대 1분 늦다.
@@ -323,7 +325,7 @@ Body: { "role": 0 | 1 | 2 }
 | `PostLogoutRedirectUris` | 로그아웃 후 복귀 허용 주소 |
 | `Permissions` | 허용된 엔드포인트·grant type·scope (JSON) |
 | `Requirements` | PKCE 필수 등 요구사항 |
-| `HomepageName` | 클라이언트 영문 명칭 (영문 `CHECK` 제약 적용) |
+| `ClientDisplayName` | 클라이언트 영문 명칭 (영문 `CHECK` 제약 적용) |
 
 ### OpenIddictAuthorizations — 인가 기록
 

@@ -34,10 +34,10 @@
 ```text
 [authserver DB (인증/세션/보안)]
   ├── users                         : 사용자 계정 마스터
-  ├── AuthorizationCodeIssuanceLog  : 인가 코드 발급/소진 이력 (1분 수명, SHA-256)
-  ├── RefreshTokenLedger            : 리프레시 토큰 원장 (14일 수명, Token Rotation)
-  ├── LoginAuditLog                 : 로그인 시도 감사 로그 (IP, 계정, 성공여부)
-  ├── IpBlocklist                   : IP 접근 차단 방화벽 정책
+  ├── AuthorizationCodes            : 인가 코드 발급/소진 이력 (1분 수명, SHA-256)
+  ├── RefreshTokens                 : 리프레시 토큰 목록 (14일 수명, Token Rotation)
+  ├── LoginLogs                     : 로그인 시도 및 접속 로그 (IP, 계정, 성공여부)
+  ├── BlockedIps                    : IP 접근 차단 방화벽 정책
   ├── OpenIddictApplications        : OIDC 등록 클라이언트 앱 (영문 HomepageName 제약)
   ├── OpenIddictAuthorizations      : 사용자 권한 위임(Consent) 승인 내역
   ├── OpenIddictScopes              : 스코프 카탈로그 (영문 DisplayName/Description 제약)
@@ -61,15 +61,15 @@
 | :--- | :--- | :---: | :--- |
 | **`Id`** | `BIGINT` | PK, Auto Increment | 사용자의 불변 고유 식별자 (JWT `sub` 클레임 원천) |
 | **`Email`** | `VARCHAR(256)` | Unique Index, Not Null | 사용자 로그인 ID (중복 가입 방지 고유 키) |
-| **`UserName`** | `VARCHAR(256)` | Not Null | 사용자 표시 이름 (JWT `name` 클레임 원천) |
+| **`DisplayName`** | `VARCHAR(256)` | Not Null | 사용자 표시 이름 (JWT `name` 클레임 원천) |
 | **`PasswordHash`** | `LONGTEXT` | Not Null | PBKDF2-SHA256 단방향 솔트 암호화된 비밀번호 해시 |
 | **`Role`** | `INT` | Not Null | RBAC 권한 Enum (`0=Customer`, `1=Employee`, `2=Admin`) |
 
 ---
 
-#### 📋 2. `AuthorizationCodeIssuanceLog` (인가 코드 발급 로그 및 1회용 소진 원장)
+#### 📋 2. `AuthorizationCodes` (인가 코드 발급 로그 및 1회용 소진 관리)
 * **테이블 설명**: OIDC `/connect/authorize` 성공 시 클라이언트에게 발급되는 **초단기(1분) 인가 코드**의 SHA-256 해시 및 스냅샷 저장소.
-* **설계 특징**: 토큰 교환 시 `users` 테이블 JOIN 없이 $O(1)$로 토큰을 만들기 위해 사용자 정보를 스냅샷 반정규화 보관하며, 1회 교환 즉시 `IsRedeemed = 1`로 소진 처리하여 재사용 공격을 방어.
+* **설계 특징**: 토큰 교환 시 `users` 테이블 JOIN 없이 $O(1)$로 토큰을 만들기 위해 사용자 정보를 스냅샷 반정규화 보관하며, 1회 교환 즉시 `IsUsed = 1`로 소진 처리하여 재사용 공격을 방어.
 
 | 칼럼명 | 데이터 타입 | 제약 조건 | 설명 |
 | :--- | :--- | :---: | :--- |
@@ -78,25 +78,25 @@
 | **`CodeChallengeHash`** | `VARCHAR(128)` | Not Null | PKCE `code_challenge`의 SHA-256 해시 (토큰 교환 시 대조 검증용) |
 | **`ClientId`** | `VARCHAR(128)` | Not Null | 인가를 요청한 클라이언트 ID (`company-homepage`) |
 | **`RedirectUri`** | `VARCHAR(512)` | Not Null | 인가 완료 콜백 URL (토큰 교환 요청 시 위변조 대조 검증) |
-| **`Subject`** | `VARCHAR(128)` | Not Null | 인증된 사용자 ID (반정규화: JWT `sub` 주입용) |
+| **`UserId`** | `VARCHAR(128)` | Not Null | 인증된 사용자 ID (반정규화: JWT `sub` 주입용) |
 | **`UserEmail`** | `VARCHAR(256)` | Not Null | 사용자 이메일 (반정규화: JWT `email` 주입용) |
 | **`Scope`** | `VARCHAR(512)` | Not Null | 승인된 권한 범위 문자열 (예: `openid profile email offline_access`) |
 | **`CreatedAtUtc`** | `DATETIME(6)` | Index, Not Null | 인가 코드 발급 일시 (UTC) |
 | **`ExpiresAtUtc`** | `DATETIME(6)` | Index, Not Null | **인가 코드 만료 일시 (발급 후 1분 수명)** |
-| **`IsRedeemed`** | `TINYINT(1)` | Not Null (기본값: `0`) | **1회용 소진 여부** (`1`인 경우 재사용 공격으로 간주하여 즉시 거부) |
-| **`RedeemedAtUtc`** | `DATETIME(6)` | Nullable | 인가 코드가 토큰으로 교환 완료된 일시 |
+| **`IsUsed`** | `TINYINT(1)` | Not Null (기본값: `0`) | **1회용 소진 여부** (`1`인 경우 재사용 공격으로 간주하여 즉시 거부) |
+| **`UsedAtUtc`** | `DATETIME(6)` | Nullable | 인가 코드가 토큰으로 교환 완료된 일시 |
 
 ---
 
-#### 📋 3. `RefreshTokenLedger` (리프레시 토큰 관리 원장)
-* **테이블 설명**: 서비스 서버가 장기 세션을 유지하기 위해 보관하는 **리프레시 토큰(14일 수명)**의 SHA-256 해시 원장.
+#### 📋 3. `RefreshTokens` (리프레시 토큰 관리 대장)
+* **테이블 설명**: 서비스 서버가 장기 세션을 유지하기 위해 보관하는 **리프레시 토큰(14일 수명)**의 SHA-256 해시 저장소.
 * **설계 특징**: **Token Rotation(토큰 회전)** 정책을 적용하여 1회 갱신 시 기존 토큰은 폐기(`IsRevoked = 1`)되고 차기 토큰 해시(`ReplacedByTokenHash`)를 기록. 이미 폐기된 토큰으로 재요청 시 탈취로 판단하여 해당 사용자의 전체 세션을 강제 파기.
 
 | 칼럼명 | 데이터 타입 | 제약 조건 | 설명 |
 | :--- | :--- | :---: | :--- |
 | **`Id`** | `BIGINT` | PK, Auto Increment | 리프레시 토큰 식별자 |
 | **`RefreshTokenHash`** | `VARCHAR(128)` | **Unique Index**, Not Null | Refresh Token 평문의 SHA-256 단방향 해시 |
-| **`Subject`** | `VARCHAR(128)` | Index, Not Null | 토큰 소유 사용자 ID (`users.Id`) |
+| **`UserId`** | `VARCHAR(128)` | Index, Not Null | 토큰 소유 사용자 ID (`users.Id`) |
 | **`UserEmail`** | `VARCHAR(256)` | Not Null | 사용자 이메일 (반정규화: 재발급 시 User 재조회 생략) |
 | **`ClientId`** | `VARCHAR(128)` | Not Null | 토큰을 발급받은 클라이언트 ID (`company-homepage`) |
 | **`Scope`** | `VARCHAR(512)` | Not Null | 승인된 권한 범위 |
@@ -108,21 +108,21 @@
 
 ---
 
-#### 📋 4. `LoginAuditLog` (로그인 감사 및 침해사고 조사 로그)
-* **테이블 설명**: 로그인 성공 및 실패 이력을 실시간 기록하는 보안 감사 테이블.
-* **설계 특징**: 탈퇴한 사용자나 존재하지 않는 임의의 계정(`hacker@test.com`) 공격 시도도 기록할 수 있도록 `UserName`을 문자열로 반정규화.
+#### 📋 4. `LoginLogs` (로그인 시도 및 감사 로그)
+* **테이블 설명**: 로그인 성공 및 실패 이력을 실시간 기록하는 접속 로그 테이블.
+* **설계 특징**: 탈퇴한 사용자나 존재하지 않는 임의의 계정(`hacker@test.com`) 공격 시도도 기록할 수 있도록 `LoginId`를 문자열로 보관.
 
 | 칼럼명 | 데이터 타입 | 제약 조건 | 설명 |
 | :--- | :--- | :---: | :--- |
 | **`Id`** | `BIGINT` | PK, Auto Increment | 로그인 로그 식별자 |
-| **`UserName`** | `VARCHAR(256)` | Composite Index, Not Null | 로그인 시도한 사용자 계정/이메일 문자열 |
+| **`LoginId`** | `VARCHAR(256)` | Composite Index, Not Null | 로그인 시도한 사용자 계정/이메일 문자열 |
 | **`IpAddress`** | `VARCHAR(45)` | Composite Index, Not Null | 접속 요청 IP 주소 (IPv4/IPv6 공격 발원지 추적) |
 | **`Succeeded`** | `TINYINT(1)` | Not Null | 로그인 성공 여부 (`1=성공`, `0=실패`) |
 | **`AttemptedAtUtc`** | `DATETIME(6)` | Composite Index, Not Null | 시도 일시 (IP/계정별 분당 실패율 집계 및 Brute-force 탐지용) |
 
 ---
 
-#### 📋 5. `IpBlocklist` (IP 차단 방화벽 정책)
+#### 📋 5. `BlockedIps` (IP 차단 방화벽 정책)
 * **테이블 설명**: 악의적인 공격이 탐지된 IP를 즉시 차단하는 인메모리 캐시 연동 방화벽 테이블.
 * **설계 특징**: 미들웨어 최상단에서 1분 캐싱을 통해 인메모리 필터링하여 비인가 요청을 $O(1)$로 차단(`403 Forbidden`).
 

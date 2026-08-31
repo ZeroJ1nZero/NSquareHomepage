@@ -1,6 +1,7 @@
 export interface CurrentUser {
   isAuthenticated: boolean;
   userName: string | null;
+  displayName?: string | null;
   role: string | null;
   email?: string | null;
   activeSessions?: {
@@ -17,12 +18,14 @@ export interface AboutData {
 }
 
 export interface ServiceData {
+  content?: string;
   service?: string;
   updatedAt?: string | null;
 }
 
 export interface HistoryItem {
   id?: number;
+  eventDate?: string;
   data?: string;
   date?: string;
   content: string;

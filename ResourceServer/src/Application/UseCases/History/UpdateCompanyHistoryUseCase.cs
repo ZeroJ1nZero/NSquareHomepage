@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.History;
 
@@ -26,9 +26,9 @@ public class UpdateCompanyHistoryUseCase : IUpdateCompanyHistoryUseCase
             return null;
         }
 
-        history.Update(dto.Date, dto.Content);
+        history.Update(dto.EventDate, dto.Content);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new CompanyHistoryDto(history.Id, history.Date, history.Content, history.CreatedAt);
+        return new CompanyHistoryDto(history.Id, history.EventDate, history.Content, history.CreatedAt);
     }
 }

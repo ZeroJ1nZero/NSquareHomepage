@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Application.DTOs;
 
@@ -49,6 +50,10 @@ public record TokenExchangeResultDto(
 public record CurrentUserDto(
     bool IsAuthenticated,
     string? AuthenticationType,
-    string? UserName,
+    string? DisplayName,
     string? Role,
-    IEnumerable<object> Claims);
+    IEnumerable<object> Claims)
+{
+    [JsonPropertyName("userName")]
+    public string? UserName => DisplayName;
+}

@@ -17,34 +17,34 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await db.Database.EnsureCreatedAsync(ct);
 
-        // 1. AuthorizationCodeIssuanceLog 테이블 생성 보장 (인가 코드 전용 - 1분 수명 및 SHA-256 해시 저장)
+        // 1. AuthorizationCodes 테이블 생성 보장 (인가 코드 전용 - 1분 수명 및 SHA-256 해시 저장)
         await db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS `AuthorizationCodeIssuanceLog` (
+            CREATE TABLE IF NOT EXISTS `AuthorizationCodes` (
                 `Id` BIGINT NOT NULL AUTO_INCREMENT,
                 `AuthorizationCodeHash` VARCHAR(128) NOT NULL,
                 `CodeChallengeHash` VARCHAR(128) NOT NULL,
                 `ClientId` VARCHAR(128) NOT NULL,
                 `RedirectUri` VARCHAR(512) NOT NULL,
-                `Subject` VARCHAR(128) NOT NULL,
+                `UserId` VARCHAR(128) NOT NULL,
                 `UserEmail` VARCHAR(256) NOT NULL,
                 `Scope` VARCHAR(512) NOT NULL,
                 `CreatedAtUtc` DATETIME(6) NOT NULL,
                 `ExpiresAtUtc` DATETIME(6) NOT NULL,
-                `IsRedeemed` TINYINT(1) NOT NULL DEFAULT 0,
-                `RedeemedAtUtc` DATETIME(6) NULL,
+                `IsUsed` TINYINT(1) NOT NULL DEFAULT 0,
+                `UsedAtUtc` DATETIME(6) NULL,
                 PRIMARY KEY (`Id`),
-                UNIQUE INDEX `UX_AuthorizationCodeIssuanceLog_AuthorizationCodeHash` (`AuthorizationCodeHash`),
-                INDEX `IX_AuthorizationCodeIssuanceLog_ExpiresAtUtc` (`ExpiresAtUtc`),
-                INDEX `IX_AuthorizationCodeIssuanceLog_CreatedAtUtc` (`CreatedAtUtc`)
+                UNIQUE INDEX `UX_AuthorizationCodes_AuthorizationCodeHash` (`AuthorizationCodeHash`),
+                INDEX `IX_AuthorizationCodes_ExpiresAtUtc` (`ExpiresAtUtc`),
+                INDEX `IX_AuthorizationCodes_CreatedAtUtc` (`CreatedAtUtc`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ", ct);
 
-        // 2. RefreshTokenLedger 테이블 생성 보장 (리프레시 토큰 전용 - 14일 수명 및 해시 저장)
+        // 2. RefreshTokens 테이블 생성 보장 (리프레시 토큰 전용 - 14일 수명 및 해시 저장)
         await db.Database.ExecuteSqlRawAsync(@"
-            CREATE TABLE IF NOT EXISTS `RefreshTokenLedger` (
+            CREATE TABLE IF NOT EXISTS `RefreshTokens` (
                 `Id` BIGINT NOT NULL AUTO_INCREMENT,
                 `RefreshTokenHash` VARCHAR(128) NOT NULL,
-                `Subject` VARCHAR(128) NOT NULL,
+                `UserId` VARCHAR(128) NOT NULL,
                 `UserEmail` VARCHAR(256) NOT NULL,
                 `ClientId` VARCHAR(128) NOT NULL,
                 `Scope` VARCHAR(512) NOT NULL,
@@ -54,41 +54,59 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
                 `RevokedAtUtc` DATETIME(6) NULL,
                 `ReplacedByTokenHash` VARCHAR(128) NULL,
                 PRIMARY KEY (`Id`),
-                UNIQUE INDEX `UX_RefreshTokenLedger_RefreshTokenHash` (`RefreshTokenHash`),
-                INDEX `IX_RefreshTokenLedger_Subject` (`Subject`),
-                INDEX `IX_RefreshTokenLedger_ExpiresAtUtc` (`ExpiresAtUtc`),
-                INDEX `IX_RefreshTokenLedger_CreatedAtUtc` (`CreatedAtUtc`)
+                UNIQUE INDEX `UX_RefreshTokens_RefreshTokenHash` (`RefreshTokenHash`),
+                INDEX `IX_RefreshTokens_UserId` (`UserId`),
+                INDEX `IX_RefreshTokens_ExpiresAtUtc` (`ExpiresAtUtc`),
+                INDEX `IX_RefreshTokens_CreatedAtUtc` (`CreatedAtUtc`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ", ct);
 
-        // 테이블명 마이그레이션
+        // 테이블명 마이그레이션 (이전 명칭 -> 직관적인 명칭으로 마이그레이션)
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `user` TO `users`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `User` TO `users`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-block` TO `IpBlocklist`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `BlockedIp` TO `IpBlocklist`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `blockedip` TO `IpBlocklist`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-login` TO `LoginAuditLog`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `LoginAudit` TO `LoginAuditLog`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `loginlog` TO `LoginAuditLog`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-authorizationcodes` TO `AuthorizationCodeIssuanceLog`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationcodes` TO `AuthorizationCodeIssuanceLog`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-block` TO `BlockedIps`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `BlockedIp` TO `BlockedIps`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `blockedip` TO `BlockedIps`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `IpBlocklist` TO `BlockedIps`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-login` TO `LoginLogs`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `LoginAudit` TO `LoginLogs`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `loginlog` TO `LoginLogs`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `LoginAuditLog` TO `LoginLogs`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `log-authorizationcodes` TO `AuthorizationCodes`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationcodes` TO `AuthorizationCodes`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `AuthorizationCodeIssuanceLog` TO `AuthorizationCodes`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-authorizationcodes` TO `OpenIddictAuthorizations`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationlog` TO `OpenIddictAuthorizations`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-oidctokens` TO `OpenIddictTokens`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `oidctokens` TO `OpenIddictTokens`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-scopes` TO `OpenIddictScopes`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `authorizationscopes` TO `OpenIddictScopes`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-refreshtokens` TO `RefreshTokenLedger`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `refreshtokens` TO `RefreshTokenLedger`;", ct); } catch { }
-        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `IssuedRefreshTokens` TO `RefreshTokenLedger`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-refreshtokens` TO `RefreshTokens`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `refreshtokens` TO `RefreshTokens`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `IssuedRefreshTokens` TO `RefreshTokens`;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `RefreshTokenLedger` TO `RefreshTokens`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `data-trustedapplications` TO `OpenIddictApplications`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `trustedApplication` TO `OpenIddictApplications`;", ct); } catch { }
         try { await db.Database.ExecuteSqlRawAsync("RENAME TABLE `trustedapplication` TO `OpenIddictApplications`;", ct); } catch { }
 
+        // 컬럼명 마이그레이션
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `users` CHANGE COLUMN `UserName` `DisplayName` VARCHAR(256) NOT NULL;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `LoginLogs` CHANGE COLUMN `AttemptedIdentifier` `LoginId` VARCHAR(256) NOT NULL;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `LoginLogs` CHANGE COLUMN `UserName` `LoginId` VARCHAR(256) NOT NULL;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `AuthorizationCodes` CHANGE COLUMN `Subject` `UserId` VARCHAR(128) NOT NULL;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `AuthorizationCodes` CHANGE COLUMN `IsRedeemed` `IsUsed` TINYINT(1) NOT NULL DEFAULT 0;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `AuthorizationCodes` CHANGE COLUMN `RedeemedAtUtc` `UsedAtUtc` DATETIME(6) NULL;", ct); } catch { }
+        try { await db.Database.ExecuteSqlRawAsync("ALTER TABLE `RefreshTokens` CHANGE COLUMN `Subject` `UserId` VARCHAR(128) NOT NULL;", ct); } catch { }
+
         try
         {
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `OpenIddictApplications` DROP CONSTRAINT IF EXISTS `CK_trustedApplication_HomepageName_EnglishOnly`;", ct);
+            await db.Database.ExecuteSqlRawAsync("ALTER TABLE `OpenIddictApplications` DROP CONSTRAINT IF EXISTS `CK_OpenIddictApplications_HomepageName_EnglishOnly`;", ct);
             await db.Database.ExecuteSqlRawAsync(@"
-                ALTER TABLE `OpenIddictApplications` CHANGE COLUMN `DisplayName` `HomepageName` LONGTEXT NULL;
+                ALTER TABLE `OpenIddictApplications` CHANGE COLUMN `DisplayName` `ClientDisplayName` LONGTEXT NULL;
+            ", ct);
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE `OpenIddictApplications` CHANGE COLUMN `HomepageName` `ClientDisplayName` LONGTEXT NULL;
             ", ct);
         }
         catch { /* Column may already be renamed or not exist */ }
@@ -113,8 +131,8 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
         {
             await db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE `OpenIddictApplications` 
-                ADD CONSTRAINT `CK_OpenIddictApplications_HomepageName_EnglishOnly` 
-                CHECK (`HomepageName` IS NULL OR `HomepageName` REGEXP '^[a-zA-Z0-9[:space:]_.,\'\""()-]+$');
+                ADD CONSTRAINT `CK_OpenIddictApplications_ClientDisplayName_EnglishOnly` 
+                CHECK (`ClientDisplayName` IS NULL OR `ClientDisplayName` REGEXP '^[a-zA-Z0-9[:space:]_.,\'\""()-]+$');
             ", ct);
         }
         catch { /* Constraint may already exist */ }
@@ -237,7 +255,7 @@ public class SeedData(IServiceProvider services, IConfiguration config, IHostEnv
             !await db.Users.AnyAsync(u => u.Email == "test@company.local", ct))
         {
             var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
-            var user = new User { Email = "test@company.local", UserName = "테스트 사용자", PasswordHash = "", Role = UserRole.Admin };
+            var user = new User { Email = "test@company.local", DisplayName = "테스트 사용자", PasswordHash = "", Role = UserRole.Admin };
             user.PasswordHash = hasher.HashPassword(user, "Test1234!");
             db.Users.Add(user);
             await db.SaveChangesAsync(ct);

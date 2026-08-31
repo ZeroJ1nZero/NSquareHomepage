@@ -40,7 +40,7 @@ public class LoginModel(AppDbContext db, IPasswordHasher<User> hasher, ILoginAud
         var identity = new ClaimsIdentity(CookieAuthenticationDefaults.AuthenticationScheme);
         identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, user!.Id.ToString()));
         identity.AddClaim(new Claim(ClaimTypes.Email, user.Email));
-        identity.AddClaim(new Claim(ClaimTypes.Name, user.UserName));
+        identity.AddClaim(new Claim(ClaimTypes.Name, user.DisplayName));
         // 발급 시점 역할 고정 — [Authorize(Roles = ...)]용. 역할 변경은 재로그인 후 반영.
         identity.AddClaim(new Claim(ClaimTypes.Role, user.Role.ToString()));
 

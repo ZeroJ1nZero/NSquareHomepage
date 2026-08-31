@@ -86,10 +86,10 @@ builder.Services.AddOpenIddict()
         else
             options.AddDevelopmentSigningCertificate();
         options.AddEventHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>(builder =>
-            builder.UseScopedHandler<SaveAuthorizationCodeIssuanceLogHandler>());
+            builder.UseScopedHandler<SaveAuthorizationCodeHandler>());
 
         options.AddEventHandler<OpenIddictServerEvents.ApplyTokenResponseContext>(builder =>
-            builder.UseScopedHandler<SaveRefreshTokenLedgerHandler>());
+            builder.UseScopedHandler<SaveRefreshTokenHandler>());
 
         options.UseAspNetCore()
                .EnableAuthorizationEndpointPassthrough()
@@ -137,8 +137,8 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<SaveAuthorizationCodeIssuanceLogHandler>();
-builder.Services.AddScoped<SaveRefreshTokenLedgerHandler>();
+builder.Services.AddScoped<SaveAuthorizationCodeHandler>();
+builder.Services.AddScoped<SaveRefreshTokenHandler>();
 
 // 별도 프로젝트로 도는 클라이언트(홈페이지)의 브라우저 요청 허용
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
@@ -214,7 +214,7 @@ app.MapRazorPages();
 // 하위 호환성을 위한 /api/register 매핑 (Swagger UI에는 /api/users/register로 통일 노출)
 app.MapPost("/api/register", async (Web.Controllers.RegisterUserRequest req, RegisterUserUseCase useCase, CancellationToken ct) =>
 {
-    var result = await useCase.ExecuteAsync(req.Email, req.UserName, req.Password, req.Role, ct);
+    var result = await useCase.ExecuteAsync(req.Email, req.DisplayName, req.Password, req.Role, ct);
     return result.Succeeded
         ? Results.Ok(new Web.Controllers.UserResponseDto
         {
@@ -222,7 +222,7 @@ app.MapPost("/api/register", async (Web.Controllers.RegisterUserRequest req, Reg
             Message = "사용자가 성공적으로 등록되었습니다.",
             UserId = result.UserId,
             Email = req.Email.Trim(),
-            UserName = req.UserName.Trim(),
+            DisplayName = req.DisplayName.Trim(),
             Role = req.Role,
             RoleName = req.Role.ToString()
         })
@@ -249,12 +249,12 @@ app.MapPost("/connect/logout", (HttpContext context) =>
 
 app.Run();
 
-public class SaveAuthorizationCodeIssuanceLogHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>
+public class SaveAuthorizationCodeHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyAuthorizationResponseContext>
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AppDbContext _db;
 
-    public SaveAuthorizationCodeIssuanceLogHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
+    public SaveAuthorizationCodeHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
     {
         _httpContextAccessor = httpContextAccessor;
         _db = db;
@@ -300,24 +300,24 @@ public class SaveAuthorizationCodeIssuanceLogHandler : IOpenIddictServerHandler<
                 CodeChallengeHash = challengeHash,
                 ClientId = context.Request?.ClientId ?? "company-homepage",
                 RedirectUri = context.Request?.RedirectUri ?? string.Empty,
-                Subject = subject,
+                UserId = subject,
                 UserEmail = userEmail,
                 Scope = scopes,
                 CreatedAtUtc = DateTime.UtcNow,
                 ExpiresAtUtc = DateTime.UtcNow.AddMinutes(1),
-                IsRedeemed = false
+                IsUsed = false
             });
             await _db.SaveChangesAsync(httpContext?.RequestAborted ?? default);
         }
     }
 }
 
-public class SaveRefreshTokenLedgerHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyTokenResponseContext>
+public class SaveRefreshTokenHandler : IOpenIddictServerHandler<OpenIddictServerEvents.ApplyTokenResponseContext>
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly AppDbContext _db;
 
-    public SaveRefreshTokenLedgerHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
+    public SaveRefreshTokenHandler(IHttpContextAccessor httpContextAccessor, AppDbContext db)
     {
         _httpContextAccessor = httpContextAccessor;
         _db = db;
@@ -350,7 +350,7 @@ public class SaveRefreshTokenLedgerHandler : IOpenIddictServerHandler<OpenIddict
             _db.RefreshTokens.Add(new RefreshToken
             {
                 RefreshTokenHash = tokenHash,
-                Subject = subject,
+                UserId = subject,
                 UserEmail = email,
                 ClientId = context.Request?.ClientId ?? "company-homepage",
                 Scope = scopes,

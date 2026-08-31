@@ -9,6 +9,7 @@ using Application.UseCases.Public;
 namespace Web.Controllers;
 
 [ApiController]
+[Tags("주요 서비스 (Company Services)")]
 public class ServicesController : ControllerBase
 {
     private readonly IGetCompanyServiceUseCase _getServiceUseCase;
@@ -27,7 +28,6 @@ public class ServicesController : ControllerBase
 
     [HttpGet("api/public/company-services")]
     [AllowAnonymous]
-    [Tags("공개 데이터 조회")]
     public async Task<ActionResult<ServiceDto>> GetService(CancellationToken cancellationToken)
     {
         var result = await _getServiceUseCase.ExecuteAsync(cancellationToken);
@@ -35,7 +35,6 @@ public class ServicesController : ControllerBase
     }
 
     [HttpPut("api/admin/company-services")]
-    [Tags("관리자 리소스 CRUD")]
     public async Task<IActionResult> UpdateService(
         [FromBody] UpdateServiceDto dto,
         CancellationToken cancellationToken)

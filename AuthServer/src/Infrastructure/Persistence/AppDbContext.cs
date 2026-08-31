@@ -19,35 +19,36 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.ToTable("users");
             e.Property(x => x.Email).HasMaxLength(256);
-            e.Property(x => x.UserName).HasMaxLength(256);
+            e.Property(x => x.DisplayName).HasMaxLength(256);
             e.HasIndex(x => x.Email).IsUnique(); 
         });
 
         builder.Entity<LoginLog>(e =>
         {
-            e.ToTable("LoginAuditLog");
-            e.Property(x => x.UserName).HasMaxLength(256);
+            e.ToTable("LoginLogs");
+            e.Property(x => x.LoginId).HasMaxLength(256);
             e.Property(x => x.IpAddress).HasMaxLength(45); // IPv6 최대 길이
             e.HasIndex(x => x.AttemptedAtUtc);
             e.HasIndex(x => new { x.IpAddress, x.AttemptedAtUtc });
-            e.HasIndex(x => new { x.UserName, x.AttemptedAtUtc });
+            e.HasIndex(x => new { x.LoginId, x.AttemptedAtUtc });
         });
 
         builder.Entity<BlockedIp>(e =>
         {
-            e.ToTable("IpBlocklist");
+            e.ToTable("BlockedIps");
             e.Property(x => x.IpAddress).HasMaxLength(45);
             e.HasIndex(x => x.IpAddress).IsUnique();
         });
 
         builder.Entity<AuthorizationCode>(e =>
         {
-            e.ToTable("AuthorizationCodeIssuanceLog");
+            e.ToTable("AuthorizationCodes");
+            e.Ignore(x => x.Subject);
             e.Property(x => x.AuthorizationCodeHash).HasMaxLength(128);
             e.Property(x => x.CodeChallengeHash).HasMaxLength(128);
             e.Property(x => x.ClientId).HasMaxLength(128);
             e.Property(x => x.RedirectUri).HasMaxLength(512);
-            e.Property(x => x.Subject).HasMaxLength(128);
+            e.Property(x => x.UserId).HasMaxLength(128);
             e.Property(x => x.UserEmail).HasMaxLength(256);
             e.Property(x => x.Scope).HasMaxLength(512);
             e.HasIndex(x => x.AuthorizationCodeHash).IsUnique();
@@ -57,15 +58,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         builder.Entity<RefreshToken>(e =>
         {
-            e.ToTable("RefreshTokenLedger");
+            e.ToTable("RefreshTokens");
+            e.Ignore(x => x.Subject);
             e.Property(x => x.RefreshTokenHash).HasMaxLength(128);
-            e.Property(x => x.Subject).HasMaxLength(128);
+            e.Property(x => x.UserId).HasMaxLength(128);
             e.Property(x => x.UserEmail).HasMaxLength(256);
             e.Property(x => x.ClientId).HasMaxLength(128);
             e.Property(x => x.Scope).HasMaxLength(512);
             e.Property(x => x.ReplacedByTokenHash).HasMaxLength(128);
             e.HasIndex(x => x.RefreshTokenHash).IsUnique();
-            e.HasIndex(x => x.Subject);
+            e.HasIndex(x => x.UserId);
             e.HasIndex(x => x.ExpiresAtUtc);
             e.HasIndex(x => x.CreatedAtUtc);
         });
@@ -73,9 +75,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         builder.Entity<OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication>(e =>
         {
             e.ToTable("OpenIddictApplications", t => 
-                t.HasCheckConstraint("CK_OpenIddictApplications_HomepageName_EnglishOnly", 
-                    "`HomepageName` IS NULL OR `HomepageName` REGEXP '^[a-zA-Z0-9[:space:]_.,\\'\"()-]+$'"));
-            e.Property(x => x.DisplayName).HasColumnName("HomepageName");
+                t.HasCheckConstraint("CK_OpenIddictApplications_ClientDisplayName_EnglishOnly", 
+                    "`ClientDisplayName` IS NULL OR `ClientDisplayName` REGEXP '^[a-zA-Z0-9[:space:]_.,\\'\"()-]+$'"));
+            e.Property(x => x.DisplayName).HasColumnName("ClientDisplayName");
             e.Ignore(x => x.DisplayNames);
             e.Ignore(x => x.JsonWebKeySet);
         });
@@ -118,12 +120,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     private void ValidateEntities()
     {
-        ValidateHomepageName();
+        ValidateClientDisplayName();
         ValidateScopeDisplayName();
         ValidateScopeDescription();
     }
 
-    private void ValidateHomepageName()
+    private void ValidateClientDisplayName()
     {
         var appEntries = ChangeTracker.Entries<OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication>()
             .Where(e => e.State is EntityState.Added or EntityState.Modified);
@@ -136,7 +138,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 // 영문(A-Z, a-z), 숫자(0-9), 공백 및 기본 문장부호만 허용 (한글 등 비영문 문자 차단)
                 if (!System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z0-9\s\-_.,'&()]+$"))
                 {
-                    throw new InvalidOperationException($"HomepageName ('{name}')에는 영문(English), 숫자, 기본 특수문자 및 공백만 등록할 수 있습니다.");
+                    throw new InvalidOperationException($"ClientDisplayName ('{name}')에는 영문(English), 숫자, 기본 특수문자 및 공백만 등록할 수 있습니다.");
                 }
             }
         }

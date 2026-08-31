@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Application.Interfaces;
 using Application.DTOs.History;
 
@@ -21,8 +21,8 @@ public class GetCompanyHistoriesUseCase : IGetCompanyHistoriesUseCase
     public async Task<List<CompanyHistoryDto>> ExecuteAsync(CancellationToken cancellationToken = default)
     {
         return await _context.CompanyHistories
-            .OrderByDescending(h => h.Date)
-            .Select(h => new CompanyHistoryDto(h.Id, h.Date, h.Content, h.CreatedAt))
+            .OrderByDescending(h => h.EventDate)
+            .Select(h => new CompanyHistoryDto(h.Id, h.EventDate, h.Content, h.CreatedAt))
             .ToListAsync(cancellationToken);
     }
 }
