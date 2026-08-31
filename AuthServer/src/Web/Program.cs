@@ -58,8 +58,7 @@ builder.Services.AddOpenIddict()
     {
         options.SetAuthorizationEndpointUris("connect/authorize")
                .SetTokenEndpointUris("connect/token")
-               .SetUserInfoEndpointUris("connect/userinfo")
-               .SetEndSessionEndpointUris("api/auth/logout", "connect/logout");
+               .SetUserInfoEndpointUris("connect/userinfo");
 
         options.RegisterScopes(Scopes.OpenId, Scopes.Email, Scopes.Profile, Scopes.OfflineAccess, Scopes.Roles);
 
@@ -232,19 +231,6 @@ app.MapPost("/api/register", async (Web.Controllers.RegisterUserRequest req, Reg
             Message = "사용자 등록에 실패했습니다.",
             Errors = result.Errors
         });
-}).ExcludeFromDescription();
-
-// 하위 호환성을 위한 /connect/logout 매핑 (Swagger UI에는 /api/auth/logout으로 단일 노출)
-app.MapGet("/connect/logout", (HttpContext context) =>
-{
-    var qs = context.Request.QueryString.Value;
-    return Results.Redirect($"/api/auth/logout{qs}");
-}).ExcludeFromDescription();
-
-app.MapPost("/connect/logout", (HttpContext context) =>
-{
-    var qs = context.Request.QueryString.Value;
-    return Results.Redirect($"/api/auth/logout{qs}");
 }).ExcludeFromDescription();
 
 app.Run();

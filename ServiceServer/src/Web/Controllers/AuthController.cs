@@ -201,8 +201,7 @@ public class AuthController : ControllerBase
                 name = result.Claims.FirstOrDefault(c => c.Type == "name" || c.Type == ClaimTypes.Name)?.Value,
                 role = result.Claims.FirstOrDefault(c => c.Type == "role" || c.Type == ClaimTypes.Role)?.Value,
                 isAuthenticated = true
-            },
-            tokens = result.RootElement
+            }
         });
     }
 
@@ -346,7 +345,7 @@ public class AuthController : ControllerBase
         });
     }
 
-    [HttpPost("api/auth/logout")]
+    [HttpGet("api/auth/logout"), HttpPost("api/auth/logout")]
     [Tags("인증 및 세션 (Authentication & Session)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout([FromQuery] string? returnUrl = null)
@@ -378,18 +377,19 @@ public class AuthController : ControllerBase
         _oidcStateService.ClearSession(HttpContext);
         HttpContext.Session.Clear();
 
-        var targetReturnUrl = returnUrl;
-        if (string.IsNullOrWhiteSpace(targetReturnUrl))
-        {
-            targetReturnUrl = "http://localhost:3000/";
-        }
-
+        var targetReturnUrl = string.IsNullOrWhiteSpace(returnUrl) ? "http://localhost:3000/" : returnUrl;
         var authServerLogoutUrl = $"https://localhost:7213/api/auth/logout?post_logout_redirect_uri={Uri.EscapeDataString(targetReturnUrl)}";
+
+        if (HttpMethods.IsGet(Request.Method) && Request.Headers.Accept.ToString().Contains("text/html"))
+        {
+            return Redirect(targetReturnUrl);
+        }
 
         return Ok(new
         {
             success = true,
             logoutUrl = authServerLogoutUrl,
+            redirectUrl = targetReturnUrl,
             message = "모든 서비스 세션 쿠키 및 세션 메모리 토큰이 성공적으로 파기되었습니다."
         });
     }

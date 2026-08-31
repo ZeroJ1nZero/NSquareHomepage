@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const API_BASE = 'https://localhost:7001/api';
@@ -41,64 +41,44 @@ export const CallbackPage: React.FC = () => {
           }
         }
 
-        // Step 06: 서버 간 PKCE 토큰 교환 검증 (백채널 직통신으로 토큰 세트 발급)
-        if (isMounted) setStatus('OIDC 토큰 세트 발급 진행 중 (Step 06)...');
-        let accessToken = '';
-        let idToken = '';
-        let refreshToken = '';
+        // Step 06: 서버 간 백채널 PKCE 토큰 교환 및 기본 세션 수립
+        if (isMounted) setStatus('보안 세션 수립 및 백채널 토큰 검증 중 (Step 06)...');
 
-        try {
-          const exchangeRes = await fetch(`${API_BASE}/auth/validate-pkce`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              code: code,
-              redirectUri: 'http://localhost:3000/callback',
-            }),
-          });
-          if (exchangeRes.ok) {
-            const data = await exchangeRes.json();
-            accessToken = data.tokens?.access_token || '';
-            idToken = data.tokens?.id_token || '';
-            refreshToken = data.tokens?.refresh_token || '';
-          } else {
-            const errData = await exchangeRes.json().catch(() => ({}));
-            console.warn('validate-pkce error:', errData);
-          }
-        } catch (e) {
-          console.warn('validate-pkce request failed:', e);
+        const exchangeRes = await fetch(`${API_BASE}/auth/validate-pkce`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            code: code,
+            redirectUri: 'http://localhost:3000/callback',
+          }),
+        });
+
+        if (!exchangeRes.ok) {
+          const errData = await exchangeRes.json().catch(() => ({}));
+          throw new Error(errData.message || '인증 서버와의 토큰 교환에 실패했습니다.');
         }
 
         // 대상 서비스 및 복귀 목적지 URL 확인
         const storedService = sessionStorage.getItem('sso_target_service') || undefined;
         const storedReturnUrl = sessionStorage.getItem('sso_return_url') || undefined;
 
-        // Step 08: ServiceServer에 AccessToken, IdToken, RefreshToken을 POST로 전달하여 위치별 서비스 세션 쿠키 발급
-        if (isMounted) {
+        // Step 08: 서비스별 세션 쿠키 발급이 필요한 경우 호출 (토큰 없이 세션 메모리 기반 발급)
+        if (storedService && storedService !== 'none') {
           const serviceName = storedService === 'about' ? '회사 소개' : storedService === 'service' ? '주요 서비스' : storedService === 'history' ? '회사 연혁' : '전역';
-          setStatus(`${serviceName} 서비스 세션 쿠키 발급 중 (Step 08)...`);
-        }
+          if (isMounted) setStatus(`${serviceName} 서비스 세션 쿠키 발급 중 (Step 08)...`);
 
-        const sessionRes = await fetch(`${API_BASE}/auth/oidc-callback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            accessToken,
-            idToken,
-            refreshToken,
-            service: storedService,
-          }),
-        });
+          await fetch(`${API_BASE}/auth/oidc-callback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              service: storedService,
+            }),
+          });
+        }
 
         let targetUrl = storedReturnUrl || '/';
-        if (sessionRes.ok) {
-          const data = await sessionRes.json();
-          if (data.redirectUrl && data.redirectUrl !== 'http://localhost:3000/') {
-            targetUrl = data.redirectUrl;
-          }
-        }
 
         // 세션스토리지 정리
         sessionStorage.removeItem('sso_return_url');

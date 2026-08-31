@@ -150,7 +150,7 @@ public class AccountController(
         });
     }
 
-    [HttpGet("logout"), HttpPost("logout")]
+    [HttpGet("logout"), HttpPost("logout"), HttpGet("/connect/logout"), HttpPost("/connect/logout")]
     [Tags("인증 및 SSO (Authentication & SSO)")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Logout(
