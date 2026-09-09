@@ -6,7 +6,8 @@ services:
     image: mariadb:11.4
     container_name: nsquare-mariadb
     environment:
-      MYSQL_ROOT_PASSWORD: password123!
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_DATABASE: AuthServerDb
     ports:
       - "3306:3306"
@@ -25,7 +26,7 @@ services:
       - mariadb
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__Default=Server=mariadb;Port=3306;Database=AuthServerDb;User=root;Password=password123!;
+      - ConnectionStrings__Default=Server=mariadb;Port=3306;Database=AuthServerDb;User=root;Password=;
     ports:
       - "7213:7213"
       - "5123:8080"
@@ -43,7 +44,7 @@ services:
       - authserver
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=mariadb;Port=3306;Database=NSquareResourceDb;User=root;Password=password123!;
+      - ConnectionStrings__DefaultConnection=Server=mariadb;Port=3306;Database=NSquareResourceDb;User=root;Password=;
       - Authentication__Authority=https://authserver:7213
     ports:
       - "7002:7002"

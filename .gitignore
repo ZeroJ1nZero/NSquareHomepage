@@ -112,3 +112,9 @@ TestResults/
 *.log
 *.trx
 *.coverage
+
+## ==========================================
+## Documentation Exclusions (Keep only sso_pipeline_specification)
+## ==========================================
+docs/*
+!docs/sso_pipeline_specification.md
