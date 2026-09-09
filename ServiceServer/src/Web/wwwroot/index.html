@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>엔스퀘어(N-SQUARE) 통합 플랫폼</title>
+  <meta name="description" content="엔스퀘어 사내 통합 홈페이지 & SSO 2-Track 파이프라인 시스템" />
+  
+  <!-- Google Fonts: Plus Jakarta Sans & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <!-- Header & Navigation -->
+  <header class="site-header">
+    <div class="container header-container">
+      <div class="brand">
+        <a href="/" class="brand-link">
+          <span class="brand-logo">N²</span>
+          <div class="brand-text">
+            <span class="brand-title">N-SQUARE</span>
+            <span class="brand-subtitle">Enterprise Gateway</span>
+          </div>
+        </a>
+      </div>
+
+      <nav class="nav-links">
+        <a href="#about" class="nav-link">회사 소개</a>
+        <a href="#service" class="nav-link">주요 서비스</a>
+        <a href="#history" class="nav-link">회사 연혁</a>
+        <a href="/swagger" target="_blank" class="nav-link swagger-link">Swagger API ↗</a>
+      </nav>
+
+      <div class="auth-widget" id="authWidget">
+        <!-- JS가 로그인 상태에 따라 렌더링 -->
+        <button id="btnLogin" class="btn btn-primary btn-sm">
+          <span class="icon">🔐</span> 로그인 (관리자)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero & System Status Banner -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="hero-badge">SSO 2-Track Pipeline &amp; Clean Architecture</div>
+      <h1 class="hero-title">엔스퀘어 사내 통합 시스템</h1>
+      <p class="hero-desc">
+        OIDC SSO 기반의 <strong>세션-JWT 이중 보안 아키텍처</strong>로 구축된 사내 플랫폼입니다.<br />
+        공개 정보는 <strong>트랙 A(세션 없이 즉시 조회)</strong>로, 관리자 작업은 <strong>트랙 B(Role == Admin 검증 및 JWT 발급)</strong>로 처리됩니다.
+      </p>
+
+      <!-- Architecture Live Indicator -->
+      <div class="system-status-grid">
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-indicator active"></span>
+            <span class="status-label">🖥️ ServiceServer</span>
+          </div>
+          <span class="status-val">:7001 / :5016 (BFF)</span>
+        </div>
+
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-indicator active"></span>
+            <span class="status-label">📦 ResourceServer</span>
+          </div>
+          <span class="status-val">:7002 / :5002 (CRUD)</span>
+        </div>
+
+        <div class="status-card">
+          <div class="status-header">
+            <span class="status-indicator active"></span>
+            <span class="status-label">🔐 AuthServer</span>
+          </div>
+          <span class="status-val">:7213 / :5123 (IdP)</span>
+        </div>
+
+        <div class="status-card highlight" id="sessionStatusCard">
+          <div class="status-header">
+            <span class="status-indicator" id="sessionIndicator"></span>
+            <span class="status-label">🛡️ 현재 권한 상태</span>
+          </div>
+          <span class="status-val" id="sessionRoleText">비로그인 (트랙 A)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Area -->
+  <main class="main-content">
+    <div class="container content-grid">
+      
+      <!-- Left Column: Business Data Sections -->
+      <div class="data-column">
+
+        <!-- 1. 회사 소개 (About) Section -->
+        <section id="about" class="content-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="section-icon">🏢</span>
+              <h2 class="card-title">회사 소개 (About)</h2>
+            </div>
+            <div class="header-right">
+              <span class="track-badge track-a">트랙 A: 공개 조회</span>
+              <button id="btnEditAbout" class="btn btn-outline btn-xs" style="display: none;">
+                ✏️ 소개 수정
+              </button>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <!-- View Mode -->
+            <div id="aboutViewBox" class="data-view-box">
+              <p id="aboutContentText" class="data-text">데이터를 불러오는 중...</p>
+              <div class="data-meta">
+                <span class="meta-label">최종 갱신:</span>
+                <span id="aboutUpdatedAt" class="meta-val">-</span>
+              </div>
+            </div>
+
+            <!-- Edit Mode (Admin Only) -->
+            <div id="aboutEditBox" class="data-edit-box" style="display: none;">
+              <label for="inputAbout" class="form-label">회사 소개 내용 수정 (관리자 전용)</label>
+              <textarea id="inputAbout" class="form-textarea" rows="4" placeholder="회사 소개 내용을 입력하세요..."></textarea>
+              <div class="form-actions">
+                <button id="btnCancelAbout" class="btn btn-secondary btn-sm">취소</button>
+                <button id="btnSaveAbout" class="btn btn-primary btn-sm">
+                  <span class="icon">💾</span> 수정 내용 저장 (PUT)
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. 회사 서비스 (Service) Section -->
+        <section id="service" class="content-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="section-icon">⚡</span>
+              <h2 class="card-title">주요 서비스 (Service)</h2>
+            </div>
+            <div class="header-right">
+              <span class="track-badge track-a">트랙 A: 공개 조회</span>
+              <button id="btnEditService" class="btn btn-outline btn-xs" style="display: none;">
+                ✏️ 서비스 수정
+              </button>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <!-- View Mode -->
+            <div id="serviceViewBox" class="data-view-box">
+              <p id="serviceContentText" class="data-text">데이터를 불러오는 중...</p>
+              <div class="data-meta">
+                <span class="meta-label">최종 갱신:</span>
+                <span id="serviceUpdatedAt" class="meta-val">-</span>
+              </div>
+            </div>
+
+            <!-- Edit Mode (Admin Only) -->
+            <div id="serviceEditBox" class="data-edit-box" style="display: none;">
+              <label for="inputService" class="form-label">서비스 정보 수정 (관리자 전용)</label>
+              <input type="text" id="inputService" class="form-input" placeholder="주요 서비스 내용을 입력하세요..." />
+              <div class="form-actions">
+                <button id="btnCancelService" class="btn btn-secondary btn-sm">취소</button>
+                <button id="btnSaveService" class="btn btn-primary btn-sm">
+                  <span class="icon">💾</span> 서비스 저장 (PUT)
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. 회사 연혁 (History) Section -->
+        <section id="history" class="content-card">
+          <div class="card-header">
+            <div class="header-left">
+              <span class="section-icon">📜</span>
+              <h2 class="card-title">회사 연혁 (History)</h2>
+            </div>
+            <div class="header-right">
+              <span class="track-badge track-a">트랙 A: 공개 조회</span>
+              <button id="btnToggleHistoryForm" class="btn btn-outline btn-xs" style="display: none;">
+                ➕ 연혁 추가
+              </button>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <!-- Admin Add History Form -->
+            <div id="historyAddBox" class="data-edit-box" style="display: none; margin-bottom: 20px;">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="inputHistoryDate" class="form-label">연혁 날짜</label>
+                  <input type="date" id="inputHistoryDate" class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label for="inputHistoryContent" class="form-label">연혁 내용</label>
+                  <input type="text" id="inputHistoryContent" class="form-input" placeholder="연혁 세부 내용을 입력하세요..." />
+                </div>
+              </div>
+              <div class="form-actions">
+                <button id="btnCancelHistory" class="btn btn-secondary btn-sm">취소</button>
+                <button id="btnSaveHistory" class="btn btn-primary btn-sm">
+                  <span class="icon">➕</span> 연혁 항목 저장 (PUT)
+                </button>
+              </div>
+            </div>
+
+            <!-- Timeline View -->
+            <div id="historyTimeline" class="timeline-container">
+              <!-- JS가 연혁 목록을 타임라인으로 렌더링 -->
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <!-- Right Column: Live Pipeline Inspector & Activity Log -->
+      <div class="inspector-column">
+        <div class="inspector-card">
+          <div class="inspector-header">
+            <div class="inspector-title-wrap">
+              <span class="pulse-dot"></span>
+              <h3 class="inspector-title">실시간 파이프라인 인스펙터</h3>
+            </div>
+            <button id="btnClearLogs" class="btn btn-ghost btn-xs">지우기</button>
+          </div>
+
+          <div class="inspector-sub">
+            클라이언트 ➔ 서비스 서버 ➔ 리소스 서버 간의 실시간 HTTP 통신 내역입니다.
+          </div>
+
+          <div class="log-stream" id="logStream">
+            <div class="log-entry info">
+              <span class="log-time">[INIT]</span>
+              <span class="log-tag">SYSTEM</span>
+              <span class="log-msg">홈페이지 초기화 완료. 세션 및 데이터를 확인합니다.</span>
+            </div>
+          </div>
+
+          <div class="inspector-actions">
+            <button id="btnRefreshAll" class="btn btn-secondary btn-block">
+              🔄 전체 데이터 새로고침
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Client-side Login Modal -->
+  <div id="loginModal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon">🔐</span>
+          <h3 class="modal-title">엔스퀘어 통합 로그인</h3>
+        </div>
+        <button type="button" id="btnCloseLoginModal" class="btn-modal-close" aria-label="닫기">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-intro">
+          관리자 권한 계정으로 로그인하여 콘텐츠를 직접 관리하세요.
+        </p>
+        <div id="loginErrorMsg" class="form-error" style="display: none;"></div>
+        <form id="loginForm" class="login-form">
+          <div class="form-group">
+            <label for="inputLoginEmail" class="form-label">이메일 (아이디)</label>
+            <input type="email" id="inputLoginEmail" class="form-input" placeholder="test@company.local" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="inputLoginPassword" class="form-label">비밀번호</label>
+            <input type="password" id="inputLoginPassword" class="form-input" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+          <div class="modal-helper">
+            <span class="helper-badge">기본 계정</span>
+            <code>test@company.local</code> / <code>Test1234!</code>
+          </div>
+          <div class="form-actions" style="margin-top: 20px;">
+            <button type="button" id="btnCancelLoginModal" class="btn btn-secondary btn-sm">취소</button>
+            <button type="submit" id="btnSubmitLogin" class="btn btn-primary btn-sm">
+              <span class="icon">🚀</span> 로그인
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Script -->
+  <script src="/app.js"></script>
+</body>
+</html>

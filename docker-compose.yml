@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # 1. MariaDB (AuthServer DB)
+  mariadb:
+    image: mariadb:11.4
+    container_name: nsquare-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: ""
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_DATABASE: AuthServerDb
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - nsquare-network
+
+  # 3. AuthServer (OIDC Identity Provider)
+  authserver:
+    build:
+      context: ./AuthServer
+      dockerfile: Dockerfile
+    container_name: nsquare-authserver
+    depends_on:
+      - mariadb
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__Default=Server=mariadb;Port=3306;Database=AuthServerDb;User=root;Password=;
+    ports:
+      - "7213:7213"
+      - "5123:8080"
+    networks:
+      - nsquare-network
+
+  # 4. ResourceServer (Data Resource API)
+  resourceserver:
+    build:
+      context: ./ResourceServer
+      dockerfile: Dockerfile
+    container_name: nsquare-resourceserver
+    depends_on:
+      - mariadb
+      - authserver
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=mariadb;Port=3306;Database=NSquareResourceDb;User=root;Password=;
+      - Authentication__Authority=https://authserver:7213
+    ports:
+      - "7002:7002"
+      - "5002:8080"
+    networks:
+      - nsquare-network
+
+  # 5. ServiceServer (BFF & Web Host)
+  serviceserver:
+    build:
+      context: ./ServiceServer
+      dockerfile: Dockerfile
+    container_name: nsquare-serviceserver
+    depends_on:
+      - authserver
+      - resourceserver
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Authentication__Authority=https://authserver:7213
+      - ResourceServer__BaseUrl=https://resourceserver:7002
+    ports:
+      - "7001:7001"
+      - "5001:8080"
+    networks:
+      - nsquare-network
+
+networks:
+  nsquare-network:
+    driver: bridge
+
+volumes:
+  mariadb_data:
